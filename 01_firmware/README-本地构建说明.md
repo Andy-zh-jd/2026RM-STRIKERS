@@ -43,10 +43,10 @@ pyocd flash -t stm32f407ighx build\RM_Frame_C.hex
 
 ## 三个 TODO 在哪（框架留的空）
 
-| 文件 | 空着什么 | 谁填 |
+| 文件 | 空着什么 | 顺序 |
 |---|---|---|
-| `userCode\tasks\Src\ChassisTask.cpp` → `WheelsSpeedCalc()` | 麦轮逆解（四行 `=0;`） | A |
-| `userCode\tasks\Src\ControlTask.cpp` → `CtrlHandle()` 的 `MID_POS`/`DOWN_POS` | 档位功能 | A/B 商量 |
-| `userCode\tasks\Src\UserTask.cpp` → `UserInit()` / `UserHandle()` | 机构（M2006/舵机） | B |
+| `userCode\tasks\Src\ChassisTask.cpp` → `WheelsSpeedCalc()` | 麦轮逆解（四行 `=0;`） | 第 1 个填（粘贴版在 `03_docs`） |
+| `userCode\tasks\Src\UserTask.cpp` → `UserInit()` / `UserHandle()` | 机构（M2006/舵机） | 第 2 个 |
+| `userCode\tasks\Src\ControlTask.cpp` → `CtrlHandle()` 的 `MID_POS`/`DOWN_POS` | 档位功能 | 第 3 个（等机构能动了再定） |
 
 粘贴版逆解见 `03_docs\A线-麦轮逆解粘贴版.md`；串口打印怎么开见 `03_docs\A线-串口打印printf.md`。
