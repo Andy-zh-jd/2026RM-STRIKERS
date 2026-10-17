@@ -1,0 +1,26 @@
+{
+  "cmake.generator": "Ninja",
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+  "cmake.configureSettings": {
+    "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+  },
+  "cmake.configureOnOpen": true,
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.cStandard": "gnu99",
+  "C_Cpp.default.cppStandard": "c++11",
+  "C_Cpp.default.intelliSenseMode": "gcc-arm",
+  "files.encoding": "utf8",
+  "files.associations": {
+    "*.ld": "linkerscript",
+    "*.s": "arm"
+  },
+  "search.exclude": {
+    "build": true,
+    "Drivers": true,
+    "Middlewares": true
+  },
+  "files.watcherExclude": {
+    "**/build/**": true,
+    "**/Drivers/**": true
+  }
+}
