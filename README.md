@@ -36,3 +36,11 @@ cd 02_sim\python; python mecanum_pid_sim.py
 - MATLAB R2026a 有，**Simulink 没装**（目录只有 5.4 MB 的壳），4 个 `.slx` 打不开
 - Keil MDK **未装**（本机没有管理员权限，装不了；见 `tools\install-keil.ps1`）
 - 固件 41.8 KB > MDK-Lite 的 32 KB 上限，就算装了 Keil 也得走 License，所以主用 GCC 链
+- **Git 只装在 WSL 里**（Windows 侧没有 `git` 命令）。仓库已经建好并提交过一次，用 `wsl -- git log` 看；要装 Git for Windows 需要管理员
+
+## 已知待办
+
+- [ ] 装 Git for Windows（管理员）或用 WSL 的 git 提交，否则三个人没法协作
+- [ ] 插上 C 板 + ST-Link 跑一次 `pyocd flash`，验证烧录链路（编译链已验证，烧录未验证）
+- [ ] 买电池 + 大疆专用充电器（借用清单里没有！）
+- [ ] 再买 1–2 块 F407 最小系统板 + ST-Link，让三个人能同时写代码
