@@ -271,7 +271,7 @@ int main(void)
     MX_I2C3_Init();
     MX_SPI1_Init();
     MX_SPI2_Init();
-    // MX_IWDG_Init();
+    MX_IWDG_Init();
     MX_USB_DEVICE_Init();
     /* USER CODE BEGIN 2 */
 

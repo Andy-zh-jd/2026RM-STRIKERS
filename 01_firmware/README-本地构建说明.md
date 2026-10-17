@@ -12,7 +12,9 @@ cmake --build build
 
 或者在 VS Code 里打开这个文件夹，`Ctrl+Shift+B`（任务里还有 flash / erase / reset / 串口监视器）。
 
-产物：`build\RM_Frame_C.elf / .hex / .bin / .map`。当前基线 **FLASH 41 840 B（3.99%）、RAM 16 656 B（12.71%）**。
+产物：`build\RM_Frame_C.elf / .hex / .bin / .map`。当前基线 **FLASH 46 564 B（4.44%）、RAM 17 112 B（13.06%）**（含交接包合并进来的 BMI088 IMU + UsbPrintf；纯框架基线是 41 840 B / 16 656 B）。
+
+> 2026-10-17：已把交接包 `04_handoff\code\` 的 `UserTask.cpp`（IMU 全套）和 `Device.cpp`（启用 IWDG）合并进来，**GCC 链下零错误编译通过**。其余 7 个文件与交接包字节相同。
 
 ## 怎么烧
 
@@ -38,15 +40,16 @@ pyocd flash -t stm32f407ighx build\RM_Frame_C.hex
 ## Keil 的事
 
 - 工程文件在 `MDK-ARM\RM_Frame_C.uvprojx`，本机**没装 Keil**（当前账户不是管理员，装不了；`tools\install-keil.ps1` 会拉 UAC）
-- 就算装了：**MDK-Lite 限 32 KB，而本固件 41.8 KB**，不买 License 只能看代码不能链接
+- 就算装了：**MDK-Lite 限 32 KB，而本固件 46.6 KB**，不买 License 只能看代码不能链接
 - 结论：**日常用 GCC 链**，Keil 只作对照/应急
 
-## 三个 TODO 在哪（框架留的空）
+## TODO 在哪（框架留的空 + 交接后的现状）
 
-| 文件 | 空着什么 | 顺序 |
+| 文件 | 现状 | 顺序 |
 |---|---|---|
-| `userCode\tasks\Src\ChassisTask.cpp` → `WheelsSpeedCalc()` | 麦轮逆解（四行 `=0;`） | 第 1 个填（粘贴版在 `03_docs`） |
-| `userCode\tasks\Src\UserTask.cpp` → `UserInit()` / `UserHandle()` | 机构（M2006/舵机） | 第 2 个 |
-| `userCode\tasks\Src\ControlTask.cpp` → `CtrlHandle()` 的 `MID_POS`/`DOWN_POS` | 档位功能 | 第 3 个（等机构能动了再定） |
+| `userCode\tasks\Src\ChassisTask.cpp` → `WheelsSpeedCalc()` | ❌ 四个轮速还是 `0` | **第 1 个填**（无需硬件；粘贴版在 `03_docs`） |
+| `userCode\tasks\Src\UserTask.cpp` → `UserInit()` / `UserHandle()` | ⚠️ **IMU 已占用这两个函数**（BMI088 + 标定 + 100ms 打印）；机构代码要**加在它旁边**，别覆盖 | 第 2 个 |
+| `userCode\tasks\Src\ControlTask.cpp` → `CtrlHandle()` 的 `MID_POS`/`DOWN_POS` | ❌ 空 | 第 3 个（等机构能动了再定） |
+| `userCode\devices\Src\Device.cpp:203` 喂狗条件 | ⚠️ `if (vccBat < 10)` 逻辑反了，上电池会 1 秒复位 | **上电池前必看** `03_docs\电池上电第一坑-喂狗条件.md` |
 
-粘贴版逆解见 `03_docs\A线-麦轮逆解粘贴版.md`；串口打印怎么开见 `03_docs\A线-串口打印printf.md`。
+粘贴版逆解见 `03_docs\A线-麦轮逆解粘贴版.md`；串口打印怎么开见 `03_docs\A线-串口打印printf.md`（交接包里已经用 `UsbPrintf` 实现了，现在不用自己写 `_write`）。
