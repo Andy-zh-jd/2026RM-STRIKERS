@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 extern volatile uint8_t key_raw_state;
+// 2026-10-17：vccBat 没写在任何头文件里，要自己 extern（Device.cpp:117）
+// 用途：接电池后先看这个数对不对（换算系数 /22*222 疑似笔误，要用万用表核对）
+extern volatile float vccBat;
 
 void UsbPrintf(const char *fmt, ...)
 {
@@ -242,6 +245,7 @@ void UserHandle()
         AppendF2(" ax=", g_accelG[0]);
         AppendF2("ay=", g_accelG[1]);
         AppendF2("az=", g_accelG[2]);
+        AppendF2("vbat=", vccBat);      // 2026-10-17：接电池后先看这个数
         UsbPrintf("%s\r\n", g_line);
     }
     UserMotor.Handle();

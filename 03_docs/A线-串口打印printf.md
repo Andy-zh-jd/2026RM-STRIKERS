@@ -3,7 +3,9 @@
 官方框架里 **没有 `printf` 重定向**（`syscalls.c` 没实现 `_write`），所以你直接写 `printf` 什么都不会发生。
 两条路，任选一条，5 分钟搞定：
 
-## 方案 1：走 USB-CDC（C 板 USB-C 口，插电脑就是一个 COM 口）
+## 方案 1：走 USB-CDC（C 板 **micro USB** 口，插电脑就是一个 COM 口）
+
+> 注：C 板是 **micro USB**（手册 P.8），不是 Type-C。Type-C 那个是 **裁判系统模块**上的检录口，别搞混。
 
 `Src\usbd_cdc_if.c` 里已经有 `CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)`。新建一个 `Src\retarget.c`：
 

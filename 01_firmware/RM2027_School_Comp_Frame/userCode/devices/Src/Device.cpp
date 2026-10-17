@@ -150,6 +150,8 @@ void bsp_ADC_vccMoni(){
         vccMoni = HAL_ADC_GetValue(&hadc3)*1.25f/(float)vrefValue;
 
     }
+    // ⚠️ 2026-10-17：这个换算(/22*222)看着像笔误，从没和万用表核对过。
+    // 用它做保护之前，必须先打印 vccBat 跟实测电压对比，反推出正确系数。
     vccBat = vccMoni/22.0f*222.0f;
 }
 
@@ -200,7 +202,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         Motor::CANPackageSend(); // 给电机发包，进行控制
 
         if(cnt>20){
-            if(vccBat<10)HAL_IWDG_Refresh(&hiwdg);
+            // ===== 本地修改 2026-10-17：看门狗喂法 =====
+            // 看门狗只负责抓"程序卡死"：只要这个 1ms 中断还在跑，就无条件喂。
+            // 原代码是 if(vccBat<10) 才喂——那是把"电压检测"塞进了喂狗条件：
+            //   没电池(vccBat≈0) → 一直喂 → 看着正常；
+            //   接上 24V 电池(vccBat≥10) → 没人喂 → 每 1.02s 复位一次。
+            // 教训：喂狗条件必须只跟"程序是否活着"有关，不能带任何业务判断。
+            // 注意：init 阶段如果新增了 >1s 的等待（比如 IMU 标定），记得在循环里喂狗。
+            HAL_IWDG_Refresh(&hiwdg);
+
+            // 低压保护放这里（不是放喂狗条件里）。阈值/系数要实测：
+            // vccBat = vccMoni/22.0f*222.0f 这个换算疑似笔误，先打印再谈保护。
+            // if (vccBat < 18.0f) { /* TODO: 限流 / 停机 / 只报警 */ }
             cnt = 0;
         }
     }
