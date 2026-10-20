@@ -47,7 +47,8 @@ pyocd flash -t stm32f407ighx build\RM_Frame_C.hex
 | 器件包 | ✅ **已修好**。工程要求 `Keil.STM32F4xx_DFP.3.0.0` + `ARM::CMSIS CORE 5.4.0`；包已装到 `D:\Keil\STM32F4xx_DFP\3.0.0`、`D:\ARM\CMSIS\5.7.0`。**关键修复**：`D:\TOOLS.INI` 里 `RTEPATH="D:\"` 指向盘根时 uVision 扫不到包 → 改成 **`RTEPATH="D:\RTE"`**，并为 `D:\RTE\Keil`→`D:\Keil`、`D:\RTE\ARM`→`D:\ARM` 建了目录联接（备份：`_backup_TOOLS.INI`）|
 | 命令行编译 | ✅ 可用（`UV4 -b <工程> -o <日志>`，真实路径即可，**不要用 subst 的盘符**，会 0xC0000005 崩）|
 | LTO | ⚠️ 工程原本开了 LTO（`<v6Lto>1</v6Lto>`），Lite/Community 变体不支持 → 已改成 `0`（同时清了 `AdsLtoi`）|
-| **链接** | ❗ 现在**只差授权**：全部 .cpp 都能编译，链接时报 `L6050U: The code size of this image (57744 bytes) exceeds the maximum allowed for this version of the linker` = **还在 32 KB 的 MDK-Lite 评估模式** |
+| **链接** | ❗ 现在**只差授权**：全部 .cpp 都能编译，链接时报 `L6050U: The code size of this image (39112 bytes) exceeds the maximum allowed for this version of the linker` = **还在 32 KB 的 MDK-Lite 评估模式** |
+| 优化等级 | `<Optim>` 从 1（-O0）改成 **3（-O2）**：链接体积从 57 744 B 降到 **39 112 B**（仍 > 32 KB，所以还是过不了 Lite，但正式用 -O2 更合理）|
 
 ### 结论（2026-10-20 晚）
 
