@@ -44,18 +44,18 @@ pyocd flash -t stm32f407ighx build\RM_Frame_C.hex
 | 安装位置 | **`D:\` 根目录**：IDE = `D:\UV4\UV4.exe`，编译器 = `D:\ARM\ARMCLANG\Bin`（ArmClang V6.19）|
 | 授权 | ✅ 标题栏显示 **`[Non-Commercial Use License]`** = MDK-Community 已激活，**没有 32 KB 限制**（`TOOLS.INI` 里的 `TOOL_VARIANT=mdk_lite` 是初装残值，别看它）|
 | 中文路径 | ❌ GUI **读不了** `F:\Program Files\交龙校内赛\...` 里的工程（弹 "An error occurred while reading the project file"）→ 已建**目录联接**：`D:\RM2027_Frame` → 本文件夹（同一份文件，不是副本），Keil 里请打开 **`D:\RM2027_Frame\MDK-ARM\RM_Frame_C.uvprojx`** |
-| 器件包 | ⚠️ 工程要求 `Keil.STM32F4xx_DFP.3.0.0` + `ARM::CMSIS CORE 5.4.0`；文件已放到位（`D:\Keil\STM32F4xx_DFP\3.0.0`、`D:\ARM\CMSIS\5.7.0`），但 uVision 的**包索引**没更新，命令行仍报 `Error #543 / #541`。**包索引只能由 Pack Installer 更新**，需要在 GUI 里点 Install |
+| 器件包 | ✅ **已修好**。工程要求 `Keil.STM32F4xx_DFP.3.0.0` + `ARM::CMSIS CORE 5.4.0`；包已装到 `D:\Keil\STM32F4xx_DFP\3.0.0`、`D:\ARM\CMSIS\5.7.0`。**关键修复**：`D:\TOOLS.INI` 里 `RTEPATH="D:\"` 指向盘根时 uVision 扫不到包 → 改成 **`RTEPATH="D:\RTE"`**，并为 `D:\RTE\Keil`→`D:\Keil`、`D:\RTE\ARM`→`D:\ARM` 建了目录联接（备份：`_backup_TOOLS.INI`）|
 | 命令行编译 | ✅ 可用（`UV4 -b <工程> -o <日志>`，真实路径即可，**不要用 subst 的盘符**，会 0xC0000005 崩）|
+| LTO | ⚠️ 工程原本开了 LTO（`<v6Lto>1</v6Lto>`），Lite/Community 变体不支持 → 已改成 `0`（同时清了 `AdsLtoi`）|
+| **链接** | ❗ 现在**只差授权**：全部 .cpp 都能编译，链接时报 `L6050U: The code size of this image (57744 bytes) exceeds the maximum allowed for this version of the linker` = **还在 32 KB 的 MDK-Lite 评估模式** |
 
-**结论：日常构建/烧录继续用 GCC 链**（已验证 46 564 B，一条命令）；Keil 只在包索引修好后用作调试器 UI。
+### 结论（2026-10-20 晚）
 
-### 修 Keil 包索引的三步（GUI）
+**除了 License，Keil 已经装好且能编到链接这一步。** 剩下唯一一步是在 μVision 里激活 **MDK-Community**（免费、非商用、**官方明确说没有代码大小限制**，[Arm 官方说明](https://developer.arm.com/community/arm-community-blogs/b/tools-software-ides-blog/posts/which-keil-tool-should-i-care-about)）。
 
-1. 任务栏打开 **Pack Installer**（标题 `Pack Installer - D:`）
-2. `Packs` 标签 → 勾 **`ARM::CMSIS 5.7.0`** 和 **`Keil::STM32F4xx_DFP 3.0.0`** → 点 `Install`
-3. μVision 里打开 `D:\RM2027_Frame\MDK-ARM\RM_Frame_C.uvprojx` → `F7` 编译
+激活后：`File → License Management` 里不再显示评估/Lite，`D:\TOOLS.INI` 的 `TOOL_VARIANT` 会变；然后 `F7` 即可产出 axf。
 
-> 页面如果提示 `use MicroLIB` 不支持 C++，那是官方工程自带设置，先不管（能编过；真报错再在 `Options for Target → Target` 里取消勾选 Use MicroLIB）。
+> 在此之前：**构建/烧录用 GCC 链**（46 564 B，已验证，一条命令）。Keil 这边的价值是调试器 UI。
 
 ## TODO 在哪（框架留的空 + 交接后的现状）
 
