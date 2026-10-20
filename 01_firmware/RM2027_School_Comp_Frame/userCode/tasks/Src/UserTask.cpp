@@ -4,10 +4,13 @@
 #include "UserTask.h"
 #include <stdio.h>
 #include <stdarg.h>
+#include "RemoteControl.h"          // rcInfo（遥控器）
 extern volatile uint8_t key_raw_state;
 // 2026-10-17：vccBat 没写在任何头文件里，要自己 extern（Device.cpp:117）
 // 用途：接电池后先看这个数对不对（换算系数 /22*222 疑似笔误，要用万用表核对）
 extern volatile float vccBat;
+// 2026-10-20：底盘四个电机对象定义在 ChassisTask.cpp，这里只是引用（CMFL = ID1 左前轮）
+extern Motor CMFL;
 
 void UsbPrintf(const char *fmt, ...)
 {
@@ -229,23 +232,47 @@ static void AppendF2(const char *name, float v)
              "%s%s%d.%02d ", name, sign, s / 100, s % 100);
 }
 
+/* 整数型字段：开关量、电流原值、档位枚举 */
+static void AppendI(const char *name, int v)
+{
+    uint32_t used = strlen(g_line);
+    snprintf(&g_line[used], sizeof(g_line) - used, "%s%d ", name, v);
+}
+
 
 void UserHandle()
 {
     static uint32_t cnt = 0;
+    static uint8_t  page = 0;        // A/B 两页交替，避免一行太长被截断
 
     IMU_Update();                    // ★ 每 1ms 采样（1kHz）
 
-    if (++cnt >= 100) {              // 每 100ms 打印
+    if (++cnt >= 100) {              // 每 100ms 打一行，A/B 各 5 Hz
         cnt = 0;
         g_line[0] = '\0';
-        AppendF2("gx=", g_gyroLpf[0]);       // ★ 打印滤波后的
-        AppendF2("gy=", g_gyroLpf[1]);
-        AppendF2("gz=", g_gyroLpf[2]);
-        AppendF2(" ax=", g_accelG[0]);
-        AppendF2("ay=", g_accelG[1]);
-        AppendF2("az=", g_accelG[2]);
-        AppendF2("vbat=", vccBat);      // 2026-10-17：接电池后先看这个数
+
+        if (page == 0) {
+            /* ===== A 行：姿态 + 电池电压 ===== */
+            AppendF2("gx=", g_gyroLpf[0]);       // 陀螺 °/s（滤波后）
+            AppendF2("gy=", g_gyroLpf[1]);
+            AppendF2("gz=", g_gyroLpf[2]);
+            AppendF2("ax=", g_accelG[0]);        // 加速度 g（静止 az≈1）
+            AppendF2("ay=", g_accelG[1]);
+            AppendF2("az=", g_accelG[2]);
+            AppendF2("vbat=", vccBat);           // 电池电压（换算可疑，用万用表对）
+        } else {
+            /* ===== B 行：电机 CMFL(ID1) + 遥控器 ===== */
+            AppendF2("rpm=",  CMFL.state.speed);        // 输出轴转速 RPM（反馈）
+            AppendF2("tgt=",  CMFL.targetSpeed);        // 目标转速 RPM（指令）
+            AppendI("cur=",   (int)CMFL.state.moment);  // 实际电流，±16384 ≈ ±20A
+            AppendF2("ang=",  CMFL.state.angle);        // 输出轴累计角度（度）
+            AppendF2("T=",    CMFL.state.temperature);  // 电机温度（℃），0=没收到帧
+            AppendI("stop=",  (int)CMFL.stopFlag);      // 1=不输出（安全态）
+            AppendI("sL=",    (int)RemoteControl::rcInfo.sLeft);   // 97上/0中/158下
+            AppendI("sR=",    (int)RemoteControl::rcInfo.sRight);
+            AppendF2("col=",  RemoteControl::rcInfo.right_col);    // -1~1
+        }
+        page ^= 1;
         UsbPrintf("%s\r\n", g_line);
     }
     UserMotor.Handle();
