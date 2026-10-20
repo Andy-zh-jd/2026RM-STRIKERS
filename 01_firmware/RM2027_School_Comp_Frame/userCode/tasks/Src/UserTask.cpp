@@ -221,6 +221,12 @@ void UserInit()
 /* ---------- 拼行缓冲区：攒够一整行再一次性发 ---------- */
 static char g_line[128];
 
+/* 调试打印看哪个电机：
+ *   M2006 + C610  → UserMotor（ID5，0x1FF 帧，反馈 0x205，减速比 36）
+ *   M3508 + C620  → CMFL     （ID1，0x200 帧，反馈 0x201，减速比 19.2032）
+ * 换电机时只改这一行。 */
+#define DBG_MOTOR  UserMotor
+
 static void AppendF2(const char *name, float v)
 {
     int32_t s = (int32_t)(v * 100.0f);
@@ -261,13 +267,13 @@ void UserHandle()
             AppendF2("az=", g_accelG[2]);
             AppendF2("vbat=", vccBat);           // 电池电压（换算可疑，用万用表对）
         } else {
-            /* ===== B 行：电机 CMFL(ID1) + 遥控器 ===== */
-            AppendF2("rpm=",  CMFL.state.speed);        // 输出轴转速 RPM（反馈）
-            AppendF2("tgt=",  CMFL.targetSpeed);        // 目标转速 RPM（指令）
-            AppendI("cur=",   (int)CMFL.state.moment);  // 实际电流，±16384 ≈ ±20A
-            AppendF2("ang=",  CMFL.state.angle);        // 输出轴累计角度（度）
-            AppendF2("T=",    CMFL.state.temperature);  // 电机温度（℃），0=没收到帧
-            AppendI("stop=",  (int)CMFL.stopFlag);      // 1=不输出（安全态）
+            /* ===== B 行：电机（见 DBG_MOTOR）+ 遥控器 ===== */
+            AppendF2("rpm=",  DBG_MOTOR.state.speed);        // 输出轴转速 RPM（反馈）
+            AppendF2("tgt=",  DBG_MOTOR.targetSpeed);        // 目标转速 RPM（指令）
+            AppendI("cur=",   (int)DBG_MOTOR.state.moment);  // 实际电流（C610 满量程 10000，C620 是 16384）
+            AppendF2("ang=",  DBG_MOTOR.state.angle);        // 输出轴累计角度（度）
+            AppendF2("T=",    DBG_MOTOR.state.temperature);  // 温度：C610 不报（恒 0），C620 有
+            AppendI("stop=",  (int)DBG_MOTOR.stopFlag);      // 1=不输出（安全态）
             AppendI("sL=",    (int)RemoteControl::rcInfo.sLeft);   // 97上/0中/158下
             AppendI("sR=",    (int)RemoteControl::rcInfo.sRight);
             AppendF2("col=",  RemoteControl::rcInfo.right_col);    // -1~1
