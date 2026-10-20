@@ -1,10 +1,14 @@
-# 麦轮逆解：可以直接粘进 `ChassisTask.cpp` 的版本
+# 麦轮逆解：已落地（2026-10-20）
 
-替换 `WheelsSpeedCalc()` 里那四行 `= 0;`：
+> ✅ **已经写进 `userCode\tasks\Src\ChassisTask.cpp` 并双链编译通过**（GCC 46 788 B / Keil Code 39 224 B，0 error 0 warning）。
+> 同时把 `reductionRatio` 从 19.0 改成 **19.2032**（官方 3591/187）。
+> 数值自检：直行 → 四轮 +1.000 m/s；横移 → `-1,+1,+1,-1`；自转 60 rpm → `±2.45 m/s`、输出轴 `±306.9 rpm`。
+
+实际代码：
 
 ```cpp
     // k = 旋转时轮子到几何中心的等效力臂，m
-    float k = (TRACK_WIDTH + WHEEL_BASE) * 0.5f;      // (0.40+0.38)/2 = 0.39 m
+    const float k = (TRACK_WIDTH + WHEEL_BASE) * 0.5f;      // (0.40+0.38)/2 = 0.39 m
 
     // 约定：前进 +，左移 +，逆时针（俯视）转 +
     CMFLSpeed = fbVelocity - lrVelocity - k * rtVelocity;   // 左前
@@ -12,6 +16,10 @@
     CMBLSpeed = fbVelocity + lrVelocity - k * rtVelocity;   // 左后
     CMBRSpeed = fbVelocity - lrVelocity + k * rtVelocity;   // 右后
 ```
+
+⚠️ **顺带发现一个要调的数**：`ControlTask.cpp` 里满杆系数是 `4.2`（= 4.2 m/s），但 **M3508 输出轴空载只有 482 rpm ≈ 3.85 m/s**。
+满杆 4.2 m/s → 输出轴 526 rpm、转子 10 101 rpm，**超过电机能力**，PID 会长期顶在 16384 饱和（表现为"推满杆响应发死"）。
+建议先把系数改成 **3.0** 左右调，底盘稳了再往上加。
 
 单位：`fbVelocity/lrVelocity` 是 m/s（`ControlTask.cpp` 里 `right_col*4.2` 的 4.2 就是"满杆 = 4.2 m/s"），
 `rtVelocity` 进函数时是 RPM，函数第一行 `RPM2RADpS()` 之后是 rad/s —— 所以进 k 之前就已经对上了。
