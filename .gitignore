@@ -5,3 +5,7 @@ _matlab_ver*
 02_sim/matlab/check_env_out.txt
 _backup_TOOLS.INI
 _packs/
+01_firmware/RM2027_School_Comp_Frame/MDK-ARM/RM_Frame_C/
+mdk_build.log
+*.uvguix.*
+_backup_TOOLS.INI

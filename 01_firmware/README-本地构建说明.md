@@ -37,26 +37,35 @@ pyocd flash -t stm32f407ighx build\RM_Frame_C.hex
 
 ⚠️ **如果以后用 STM32CubeMX 重新生成代码，这 3 处会被覆盖**（它按 `CMakeLists_template.txt` 重写）。重新生成后照上表再改一遍，或者先别动 `.ioc`。
 
-## Keil 的事（2026-10-20 实测状态）
+## Keil 的事（2026-10-20 已完全打通 ✅）
 
 | 项 | 状态 |
 |---|---|
-| 安装位置 | **`D:\` 根目录**：IDE = `D:\UV4\UV4.exe`，编译器 = `D:\ARM\ARMCLANG\Bin`（ArmClang V6.19）|
-| 授权 | ✅ 标题栏显示 **`[Non-Commercial Use License]`** = MDK-Community 已激活，**没有 32 KB 限制**（`TOOLS.INI` 里的 `TOOL_VARIANT=mdk_lite` 是初装残值，别看它）|
-| 中文路径 | ❌ GUI **读不了** `F:\Program Files\交龙校内赛\...` 里的工程（弹 "An error occurred while reading the project file"）→ 已建**目录联接**：`D:\RM2027_Frame` → 本文件夹（同一份文件，不是副本），Keil 里请打开 **`D:\RM2027_Frame\MDK-ARM\RM_Frame_C.uvprojx`** |
-| 器件包 | ✅ **已修好**。工程要求 `Keil.STM32F4xx_DFP.3.0.0` + `ARM::CMSIS CORE 5.4.0`；包已装到 `D:\Keil\STM32F4xx_DFP\3.0.0`、`D:\ARM\CMSIS\5.7.0`。**关键修复**：`D:\TOOLS.INI` 里 `RTEPATH="D:\"` 指向盘根时 uVision 扫不到包 → 改成 **`RTEPATH="D:\RTE"`**，并为 `D:\RTE\Keil`→`D:\Keil`、`D:\RTE\ARM`→`D:\ARM` 建了目录联接（备份：`_backup_TOOLS.INI`）|
-| 命令行编译 | ✅ 可用（`UV4 -b <工程> -o <日志>`，真实路径即可，**不要用 subst 的盘符**，会 0xC0000005 崩）|
-| LTO | ⚠️ 工程原本开了 LTO（`<v6Lto>1</v6Lto>`），Lite/Community 变体不支持 → 已改成 `0`（同时清了 `AdsLtoi`）|
-| **链接** | ❗ 现在**只差授权**：全部 .cpp 都能编译，链接时报 `L6050U: The code size of this image (39112 bytes) exceeds the maximum allowed for this version of the linker` = **还在 32 KB 的 MDK-Lite 评估模式** |
-| 优化等级 | `<Optim>` 从 1（-O0）改成 **3（-O2）**：链接体积从 57 744 B 降到 **39 112 B**（仍 > 32 KB，所以还是过不了 Lite，但正式用 -O2 更合理）|
+| 安装位置 | **`D:\` 根目录**：IDE = `D:\UV4\UV4.exe`（桌面也有 `Keil uVision5` 快捷方式），编译器 = `D:\ARM\ARMCLANG\Bin`（ArmClang V6.19）|
+| 授权 | ✅ **Keil MDK Community 已激活**（有效期到 2033-05-31）|
+| 中文路径 | ❌ GUI **读不了** `F:\Program Files\交龙校内赛\...` 里的工程 → 已建**目录联接** `D:\RM2027_Frame` → 本文件夹（同一份文件），Keil 里打开 **`D:\RM2027_Frame\MDK-ARM\RM_Frame_C.uvprojx`** |
+| 器件包 | ✅ `Keil.STM32F4xx_DFP 3.0.0` + `ARM.CMSIS 5.7.0` 已装。**关键修复**：`D:\TOOLS.INI` 的 `RTEPATH="D:\"`（盘根）时 uVision 扫不到包 → 改成 **`RTEPATH="D:\RTE"`**，并为 `D:\RTE\Keil`、`D:\RTE\ARM` 建目录联接（原文件备份 `_backup_TOOLS.INI`）|
+| LTO | 工程原本开 LTO（`<v6Lto>1</v6Lto>`）→ 已改 **0** |
+| 优化 | `<Optim>` 1（-O0）→ **3（-O2）** |
+| **构建结果** | ✅ `F7` / `UV4 -b` 均通过：**Code 39 112 + RO 560 + RW 592 ≈ 40.3 KB Flash，ZI 16 064 B**，0 error 0 warning，产出 `MDK-ARM\RM_Frame_C\RM_Frame_C.axf / .hex` |
 
-### 结论（2026-10-20 晚）
+### 授权是怎么激活的（以后重装/换机照抄）
 
-**除了 License，Keil 已经装好且能编到链接这一步。** 剩下唯一一步是在 μVision 里激活 **MDK-Community**（免费、非商用、**官方明确说没有代码大小限制**，[Arm 官方说明](https://developer.arm.com/community/arm-community-blogs/b/tools-software-ides-blog/posts/which-keil-tool-should-i-care-about)）。
+不用注册网页表单，用 Arm 的 `armlm` 命令行：
 
-激活后：`File → License Management` 里不再显示评估/Lite，`D:\TOOLS.INI` 的 `TOOL_VARIANT` 会变；然后 `F7` 即可产出 axf。
+```powershell
+& "D:\UV4\armlm\armlm.exe" inspect -server https://mdk-preview.keil.arm.com
+& "D:\UV4\armlm\armlm.exe" activate -server https://mdk-preview.keil.arm.com -product KEMDK-COM0
+& "D:\UV4\armlm\armlm.exe" inspect          # 本地缓存里应出现 Keil MDK Community
+```
 
-> 在此之前：**构建/烧录用 GCC 链**（46 564 B，已验证，一条命令）。Keil 这边的价值是调试器 UI。
+⚠️ 许可证**本地缓存 7 天**过期 → 联网时会自动续；**连续离线超过 7 天可能掉回评估模式**，赛前记得联网跑一次上面的 `activate`。
+
+### 两个坑（都已踩过，别再踩）
+
+1. **别用 subst 出来的盘符**开工程（`K:\...`）→ UV4 直接 0xC0000005 崩
+2. **别在中文路径下开工程** → "error while reading the project file"。一律用 `D:\RM2027_Frame\...`
+3. 下载（`F8`）需要 ST-Link 驱动：材料包里 `stsw-link009.zip` 的 `dpinst_amd64.exe`（本机 x64）
 
 ## TODO 在哪（框架留的空 + 交接后的现状）
 

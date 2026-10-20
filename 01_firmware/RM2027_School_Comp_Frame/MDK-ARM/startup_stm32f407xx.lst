@@ -868,10 +868,10 @@ ARM Macro Assembler    Page 14
               00000000 
 Command Line: --debug --xref --diag_suppress=9931,A1950W --cpu=Cortex-M4.fp.sp 
 --depend=.\rm_frame_c\startup_stm32f407xx.d -o.\rm_frame_c\startup_stm32f407xx.
-o -I.\RTE\_RM_Frame_C -ID:\ARM\CMSIS\5.9.0\CMSIS\Core\Include --predefine="__EV
-AL SETA 1" --predefine="__MICROLIB SETA 1" --predefine="__UVISION_VERSION SETA 
-538" --predefine="_RTE_ SETA 1" --predefine="STM32F407xx SETA 1" --predefine="_
-RTE_ SETA 1" --list=startup_stm32f407xx.lst startup_stm32f407xx.s
+o -I.\RTE\_RM_Frame_C -ID:\ARM\CMSIS\5.9.0\CMSIS\Core\Include --predefine="__MI
+CROLIB SETA 1" --predefine="__UVISION_VERSION SETA 538" --predefine="_RTE_ SETA
+ 1" --predefine="STM32F407xx SETA 1" --predefine="_RTE_ SETA 1" --list=startup_
+stm32f407xx.lst startup_stm32f407xx.s
 
 
 
@@ -1956,4 +1956,4 @@ Symbol: __main
       At line 190 in file startup_stm32f407xx.s
 Comment: __main used once
 2 symbols
-446 symbols in table
+445 symbols in table
