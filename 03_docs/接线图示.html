@@ -303,5 +303,147 @@
 <b>一句话记牢：</b>C 板那排 24 针里，<b>A 排全是地、B 排全是 5V、C 排是信号</b>。所以 3 针插头<b>永远是竖着跨三排</b>——横着插只会插到一排地上，没有任何电压。
 </div>
 
+<h2>8. 天地飞 RF206S 连接：怎么查（三步）</h2>
+
+<h3>8.1 先看清接收机的针脚</h3>
+
+<svg viewBox="0 0 900 340" width="100%">
+  <style>
+    .p2 { fill:#f4d58d; stroke:#8a6d1f; }
+    .h1 { font-size:13.5px; fill:#111; font-weight:700; }
+    .t1 { font-size:12px; fill:#333; }
+  </style>
+
+  <text class="h1" x="20" y="24">接收机俯视（针脚朝上）：3 行 × 6 列，一列 = 一个通道</text>
+
+  <g transform="translate(90,50)">
+    <!-- 行标 -->
+    <text class="t1" x="-42" y="16" fill="#c0392b">S（信号）</text>
+    <text class="t1" x="-42" y="46" fill="#c0392b">+（5 V）</text>
+    <text class="t1" x="-42" y="76" fill="#c0392b">−（GND）</text>
+    <!-- 针 -->
+    <g>
+      <!-- row1 -->
+      <rect class="p2" x="0" y="4" width="16" height="16"/><rect class="p2" x="34" y="4" width="16" height="16"/><rect class="p2" x="68" y="4" width="16" height="16"/><rect class="p2" x="102" y="4" width="16" height="16"/><rect class="p2" x="136" y="4" width="16" height="16"/><rect class="p2" x="170" y="4" width="16" height="16"/>
+      <!-- row2 -->
+      <rect class="p2" x="0" y="34" width="16" height="16"/><rect class="p2" x="34" y="34" width="16" height="16"/><rect class="p2" x="68" y="34" width="16" height="16"/><rect class="p2" x="102" y="34" width="16" height="16"/><rect class="p2" x="136" y="34" width="16" height="16"/><rect class="p2" x="170" y="34" width="16" height="16"/>
+      <!-- row3 -->
+      <rect class="p2" x="0" y="64" width="16" height="16"/><rect class="p2" x="34" y="64" width="16" height="16"/><rect class="p2" x="68" y="64" width="16" height="16"/><rect class="p2" x="102" y="64" width="16" height="16"/><rect class="p2" x="136" y="64" width="16" height="16"/><rect class="p2" x="170" y="64" width="16" height="16"/>
+    </g>
+    <!-- 通道号 -->
+    <text class="t1" x="4"   y="100">1</text><text class="t1" x="38"  y="100">2</text><text class="t1" x="72"  y="100">3</text>
+    <text class="t1" x="106" y="100">4</text><text class="t1" x="140" y="100">5</text><text class="t1" x="174" y="100">6</text>
+    <!-- 正确插法 -->
+    <rect x="166" y="0" width="24" height="84" fill="none" stroke="#1e8449" stroke-width="3" rx="4"/>
+    <text class="t1" x="196" y="20" fill="#1e8449">← 通道 6（W.BUS）</text>
+    <text class="t1" x="196" y="40" fill="#1e8449">  插头竖着跨 S/+/− 三行</text>
+  </g>
+
+  <!-- 错误插法示意 -->
+  <g transform="translate(560,50)">
+    <text class="h1" x="-40" y="-26">❌ 横着插（跨 3 个通道）</text>
+    <rect class="p2" x="0" y="4" width="16" height="16"/><rect class="p2" x="34" y="4" width="16" height="16"/><rect class="p2" x="68" y="4" width="16" height="16"/>
+    <rect class="p2" x="0" y="34" width="16" height="16"/><rect class="p2" x="34" y="34" width="16" height="16"/><rect class="p2" x="68" y="34" width="16" height="16"/>
+    <rect class="p2" x="0" y="64" width="16" height="16"/><rect class="p2" x="34" y="64" width="16" height="16"/><rect class="p2" x="68" y="64" width="16" height="16"/>
+    <rect x="-4" y="0" width="92" height="24" fill="none" stroke="#c0392b" stroke-width="3" rx="4"/>
+    <text class="t1" x="0" y="112" fill="#c0392b">三根针都落在同一行 → 没有 5V-GND 对</text>
+  </g>
+</svg>
+
+<h3>8.2 线序对照（必须一一对应）</h3>
+
+<table>
+<tr><th>那根线的颜色</th><th>接收机 RF206S</th><th>C 板 24 针（DBUS 那一列）</th></tr>
+<tr><td><b>红</b></td><td><code>+</code>（5 V）</td><td><code>B8</code>（VCC_5V_M）</td></tr>
+<tr><td><b>灰 / 黑 / 棕</b></td><td><code>−</code>（GND）</td><td><code>A8</code>（PGND）</td></tr>
+<tr><td><b>白 / 橙 / 黄</b></td><td><code>S</code>（信号）</td><td><code>C8</code>（DBUS 信号）</td></tr>
+</table>
+
+<div class="note">
+接收机上每个通道的 3 根针，<b>顺序是从上到下 <code>S → + → −</code></b>（板子上有极小的丝印）。<br>
+C 板那一列的 3 根针，<b>顺序是从上到下 <code>A(GND) → B(5V) → C(信号)</code></b>。<br>
+两边顺序是<b>相反</b>的，所以这类线出厂时线序就是交叉的——<b>不要自己按顺序对插</b>，按上表颜色对。
+</div>
+
+<h3>8.3 三步查法</h3>
+
+<h4>第 1 步：只看，不用工具（30 秒）</h4>
+<table>
+<tr><th>看什么</th><th>正确</th><th>错了会怎样</th></tr>
+<tr><td>C 板那端插头的方向</td><td><b>竖着</b>跨 A/B/C 三排</td><td>横着插 = 只插到一排地，接收机没电</td></tr>
+<tr><td>位置</td><td>最靠近丝印 <code>DBUS</code> 字母的那一列（<code>C8</code>）</td><td>插到别的列 = 信号走的是 PWM 引脚，收不到串行数据</td></tr>
+<tr><td>接收机那端</td><td>插在标号 <b>6</b> 的那一列（最右），<b>竖着</b></td><td>插在 1~5 = 通道 6 的 W.BUS 输出没接上</td></tr>
+<tr><td>插头间距</td><td>C 板是 <b>1.25 mm</b>，插头必须也是 1.25 mm</td><td>2.54 mm 头硬插：看着到位，<b>中间的 5V 针没接触</b></td></tr>
+</table>
+
+<h4>第 2 步：万用表通断档（2 分钟，最能定位）</h4>
+<p>拔下两端，直接量这根线：</p>
+<table>
+<tr><th>表笔 A</th><th>表笔 B</th><th>应该</th><th>说明</th></tr>
+<tr><td>C 板端红线的针</td><td>接收机端 <code>+</code> 针</td><td><b>响</b></td><td>5V 通路</td></tr>
+<tr><td>C 板端灰/黑线的针</td><td>接收机端 <code>−</code> 针</td><td><b>响</b></td><td>GND 通路</td></tr>
+<tr><td>C 板端白线的针</td><td>接收机端 <code>S</code> 针</td><td><b>响</b></td><td>信号通路</td></tr>
+<tr><td>红 ↔ 灰</td><td>—</td><td><b>不响</b></td><td>响了就是短路（会烧接收机）</td></tr>
+</table>
+
+<h4>第 3 步：万用表直流电压档（3 分钟，定生死）</h4>
+<table>
+<tr><th>量哪里</th><th>怎么量</th><th>正常值</th><th>不正常说明</th></tr>
+<tr><td>C 板 DBUS 三针</td><td>红笔戳 <code>B8</code>，黑笔戳 <code>A8</code></td><td><b>≈5 V</b></td><td>0 V → 5V 那路没起来（查是不是插在 24V OUT）</td></tr>
+<tr><td>接收机 <code>+</code> 与 <code>−</code></td><td>插好后量同一列的上两根</td><td><b>≈5 V</b></td><td>板子有 5 V 而这里没有 → 线/间距问题</td></tr>
+<tr><td>接收机 <code>S</code> 与 <code>−</code></td><td>静止时量</td><td>1~3 V 的抖动值</td><td>恒定 0 或 5 V → 没在输出串行数据（没对码/不是 W.BUS）</td></tr>
+</table>
+
+<h3>8.4 判定树（按这个走，一定能定位）</h3>
+
+<svg viewBox="0 0 900 400" width="100%">
+  <style>
+    .q { fill:#eef3fb; stroke:#33507a; stroke-width:1.6; rx:6; }
+    .a { fill:#eafaf1; stroke:#1e8449; stroke-width:1.6; rx:6; }
+    .b { fill:#fdecea; stroke:#c0392b; stroke-width:1.6; rx:6; }
+    .tx { font-size:12.5px; fill:#111; }
+    .ar { stroke:#33507a; stroke-width:1.6; fill:none; marker-end:url(#a); }
+  </style>
+  <defs><marker id="b" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#33507a"/></marker></defs>
+
+  <rect class="q" x="300" y="10" width="300" height="46"/>
+  <text class="tx" x="450" y="32" text-anchor="middle">① 接收机灯亮吗？</text>
+  <text class="tx" x="450" y="49" text-anchor="middle">（24 V 已上电的前提下）</text>
+
+  <path class="ar" d="M300,33 L200,33 L200,80" marker-end="url(#b)"/>
+  <text class="tx" x="196" y="60" text-anchor="end">不亮</text>
+  <path class="ar" d="M600,33 L700,33 L700,80" marker-end="url(#b)"/>
+  <text class="tx" x="610" y="60">亮</text>
+
+  <rect class="b" x="60" y="82" width="280" height="70"/>
+  <text class="tx" x="72" y="104">没电 → 量 C 板 B8↔A8</text>
+  <text class="tx" x="72" y="124">有 5V → 线/间距问题（换 1.25mm 线）</text>
+  <text class="tx" x="72" y="144">无 5V → 板子 5V 没起（查 24V IN/OUT）</text>
+
+  <rect class="a" x="560" y="82" width="300" height="70"/>
+  <text class="tx" x="572" y="104">有电 → 进 ② 对码</text>
+  <text class="tx" x="572" y="124">长按接收机 SET 到灯闪</text>
+  <text class="tx" x="572" y="144">遥控器：通信设置 → 对码</text>
+
+  <rect class="q" x="560" y="200" width="300" height="56"/>
+  <text class="tx" x="572" y="222">② 对码成功后，屏幕 sL/sR 动吗？</text>
+  <text class="tx" x="572" y="242">（拨 SB / SC 三位开关）</text>
+
+  <path class="ar" d="M560,228 L420,228 L420,290" marker-end="url(#b)"/>
+  <text class="tx" x="416" y="218" text-anchor="end">不动</text>
+  <path class="ar" d="M710,256 L710,300" marker-end="url(#b)"/>
+  <text class="tx" x="716" y="280">动 → 完成 ✅</text>
+
+  <rect class="b" x="270" y="292" width="300" height="86"/>
+  <text class="tx" x="282" y="314">没收到帧 → 依次查：</text>
+  <text class="tx" x="282" y="334">· PPM/W.BUS 是否设成 <b>W.BUS</b></text>
+  <text class="tx" x="282" y="354">· 接收机<b>端口 6</b> 是否设成 W.BUS</text>
+  <text class="tx" x="282" y="374">· 通道表（副翼J1/升降J3/油门J2/方向J4）</text>
+</svg>
+
+<div class="ok">
+<b>明天到实验室的最短路径：</b>先看 C 板那个插头是竖还是横 → 竖着插到 DBUS 那列 → 接收机灯亮 → 对码 → 设 W.BUS + 端口 6 → 拨 SB，看 <code>sL</code> 在 97/0/158 之间跳。
+</div>
+
 </body>
 </html>
