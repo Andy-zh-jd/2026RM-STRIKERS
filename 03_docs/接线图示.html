@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>RM2027 校内赛 · 接线图示（含手册原图）</title>
+<style>
+  :root { --line:#334; --accent:#c0392b; --ok:#1e8449; --warn:#b9770e; }
+  body { font-family: "Microsoft YaHei", system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px 18px 60px; color:#111; line-height:1.7; background:#fafafa; }
+  h1 { font-size: 24px; border-bottom: 3px solid var(--accent); padding-bottom: 8px; }
+  h2 { font-size: 19px; margin-top: 36px; border-left: 5px solid var(--accent); padding-left: 10px; }
+  h3 { font-size: 16px; margin-top: 22px; color:#333; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 18px; font-size: 14px; background:#fff; }
+  th, td { border: 1px solid #ccd; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #eef1f6; }
+  code { background:#eef; padding:1px 4px; border-radius:3px; font-family: Consolas, monospace; font-size:13px; }
+  .note { background:#fff8e1; border-left:4px solid var(--warn); padding:10px 14px; margin:14px 0; }
+  .danger { background:#fdecea; border-left:4px solid var(--accent); padding:10px 14px; margin:14px 0; }
+  .ok { background:#eafaf1; border-left:4px solid var(--ok); padding:10px 14px; margin:14px 0; }
+  figure { margin: 18px 0; background:#fff; border:1px solid #dde; padding:10px; }
+  figure img { width:100%; display:block; }
+  figcaption { font-size:13px; color:#555; margin-top:8px; }
+  .gallery { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap:14px; }
+  .gallery figure { margin:0; }
+  svg text { font-family: "Microsoft YaHei", sans-serif; }
+</style>
+</head>
+<body>
+
+<h1>RM2027 校内赛 · 接线图示</h1>
+<p><b>依据</b>：RoboMaster 开发板 C 型用户手册（P.5 接口总览、P.10 USB、P.11 SWD、P.12–13 UART、<b>P.14 CAN/PWM 线序与原理图</b>、P.16 DBUS）、C620 使用说明（P.23 接口及线序、P.25–26 接线）、C610 使用说明（P.4–5 电调接口）、电池架使用说明（P.10/13）。
+本页所有图都是从原版 PDF 直接渲染的，不是重画。</p>
+
+<h2>0. 先看这一张（整车接线总览）</h2>
+
+<svg viewBox="0 0 1000 620" width="100%">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#334"/>
+    </marker>
+  </defs>
+  <style>
+    .box { fill:#fff; stroke:#334; stroke-width:2; }
+    .wire { stroke:#334; stroke-width:2; fill:none; marker-end:url(#a); }
+    .wireT { font-size:12.5px; fill:#223; }
+    .lbl { font-size:14px; font-weight:700; fill:#111; }
+    .sub { font-size:11.5px; fill:#555; }
+    .thick { stroke:#c0392b; stroke-width:4; }
+    .thin  { stroke:#1e6fb8; stroke-width:2; }
+    .bad   { stroke:#c0392b; stroke-width:2.5; stroke-dasharray:6 4; }
+  </style>
+
+  <!-- 电池 -->
+  <rect class="box" x="20" y="40" width="150" height="70" rx="6"/>
+  <text class="lbl" x="95" y="68" text-anchor="middle">电池 TB47D</text>
+  <text class="sub" x="95" y="88" text-anchor="middle">6S / 22.2V</text>
+
+  <!-- 电池架 -->
+  <rect class="box" x="215" y="40" width="150" height="70" rx="6"/>
+  <text class="lbl" x="290" y="62" text-anchor="middle">电池架</text>
+  <text class="sub" x="290" y="82" text-anchor="middle">XT60 输出·带开关</text>
+  <path class="wire thick" d="M170,75 L212,75"/>
+  <text class="wireT" x="172" y="66">滑轨插入</text>
+
+  <!-- C 板 -->
+  <rect class="box" x="430" y="120" width="220" height="130" rx="8"/>
+  <text class="lbl" x="540" y="148" text-anchor="middle">C 板（STM32F407）</text>
+  <text class="sub" x="540" y="170" text-anchor="middle">大脑：跑代码 / 发 CAN / 读 IMU</text>
+  <text class="sub" x="540" y="190" text-anchor="middle">24V IN · CAN1 · DBUS · SWD · micro USB</text>
+  <text class="sub" x="540" y="210" text-anchor="middle">24V OUT · PWM · 5V</text>
+  <text class="sub" x="540" y="232" text-anchor="middle">需 XT30（小）</text>
+
+  <!-- 电池架 -> XT30转接 -> C板 -->
+  <path class="wire thick" d="M290,110 C290,170 400,150 428,150"/>
+  <text class="wireT" x="300" y="132">XT60 母 → XT30 公</text>
+  <text class="wireT" x="300" y="150">（走 24V IN，别插 OUT）</text>
+
+  <!-- 电调 -->
+  <rect class="box" x="760" y="40" width="200" height="80" rx="6"/>
+  <text class="lbl" x="860" y="66" text-anchor="middle">C610 电调</text>
+  <text class="sub" x="860" y="86" text-anchor="middle">M2006 用（C620 配 M3508）</text>
+  <text class="sub" x="860" y="104" text-anchor="middle">XT30 电源 · CAN · 4pin · 三相</text>
+
+  <!-- C板 24V OUT -> 电调 -->
+  <path class="wire thick" d="M650,175 C720,175 740,120 758,100"/>
+  <text class="wireT" x="655" y="150">24V OUT → 电调 XT30</text>
+
+  <!-- 电机 -->
+  <rect class="box" x="760" y="180" width="200" height="80" rx="6"/>
+  <text class="lbl" x="860" y="206" text-anchor="middle">M2006 电机</text>
+  <text class="sub" x="860" y="226" text-anchor="middle">减速比 36:1</text>
+  <text class="sub" x="860" y="244" text-anchor="middle">三相线 + 4 芯编码器</text>
+  <path class="wire thin" d="M860,120 L860,177"/>
+  <text class="wireT" x="868" y="150">三相（同色对插）</text>
+  <path class="wire thin" d="M790,120 C760,150 780,180 790,190"/>
+  <text class="wireT" x="700" y="196">4 芯编码器</text>
+
+  <!-- CAN -->
+  <path class="wire thin" d="M650,140 L758,90" opacity="0.35"/>
+  <text class="wireT" x="655" y="122">CAN1（2 针）：Pin1=CAN_L(黑) Pin2=CAN_H(红)</text>
+
+  <!-- 接收机 -->
+  <rect class="box" x="20" y="230" width="180" height="80" rx="6"/>
+  <text class="lbl" x="110" y="256" text-anchor="middle">接收机 RF206S</text>
+  <text class="sub" x="110" y="276" text-anchor="middle">通道 6 = W.BUS</text>
+  <text class="sub" x="110" y="296" text-anchor="middle">S / + / −</text>
+  <path class="wire thin" d="M200,270 L428,255"/>
+  <text class="wireT" x="215" y="262">DBUS 3 针：5V / GND / DBUS(信号)</text>
+
+  <!-- 遥控器 -->
+  <rect class="box" x="20" y="340" width="180" height="60" rx="6"/>
+  <text class="lbl" x="110" y="365" text-anchor="middle">天地飞 ET08</text>
+  <text class="sub" x="110" y="385" text-anchor="middle">2.4G ↔ 接收机（先对码）</text>
+  <path class="wire bad" d="M150,310 L150,338"/>
+  <text class="wireT" x="158" y="330">无线</text>
+
+  <!-- ST-Link / PC -->
+  <rect class="box" x="430" y="300" width="130" height="70" rx="6"/>
+  <text class="lbl" x="495" y="326" text-anchor="middle">ST-Link</text>
+  <text class="sub" x="495" y="346" text-anchor="middle">SWD 4 针</text>
+  <text class="sub" x="495" y="362" text-anchor="middle">只接 3.3V</text>
+  <path class="wire thin" d="M470,250 L495,297"/>
+  <text class="wireT" x="380" y="286">SWDIO/SWCLK/GND/3.3V</text>
+
+  <rect class="box" x="600" y="300" width="150" height="70" rx="6"/>
+  <text class="lbl" x="675" y="326" text-anchor="middle">笔记本</text>
+  <text class="sub" x="675" y="346" text-anchor="middle">micro USB → COM5</text>
+  <text class="sub" x="675" y="362" text-anchor="middle">115200（看打印）</text>
+  <path class="wire thin" d="M610,250 L660,297"/>
+  <text class="wireT" x="600" y="278">USB CDC</text>
+
+  <!-- 图例 -->
+  <rect x="20" y="430" width="960" height="160" fill="#fff" stroke="#dde"/>
+  <text class="lbl" x="36" y="458">图例</text>
+  <line x1="36" y1="480" x2="96" y2="480" class="thick"/><text class="sub" x="104" y="485">粗线 = 24V 动力（大电流）</text>
+  <line x1="36" y1="506" x2="96" y2="506" class="thin"/><text class="sub" x="104" y="511">细线 = 数据/信号（CAN、DBUS、SWD、USB）</text>
+  <line x1="36" y1="532" x2="96" y2="532" class="bad"/><text class="sub" x="104" y="537">虚线 = 无线（遥控器↔接收机）</text>
+  <text class="sub" x="36" y="566">⚠️ 整车合规链路：电池 → 电池架 → 官方裁判系统模块 → 车上其他所有用电（检录会查）。台架调试可临时跳过裁判系统。</text>
+  <text class="sub" x="36" y="586">⚠️ 台架测试：三相线可以先不接（电机转不了，但编码器照样回传数据）。</text>
+</svg>
+
+<h2>1. 今晚卡住的地方：C 板 24PIN 排针的行列</h2>
+
+<p>手册 P.14 的 PWM 原理图给出了关键信息，这是整页最有价值的一张：</p>
+
+<figure>
+  <img src="img/manual/Cboard_p14.png" alt="C 板 P.14 CAN/PWM 原理图">
+  <figcaption>手册 P.14：上方是 <b>CAN1（2 针，1=CANL 2=CANH）</b> 与 <b>CAN2（4 针，1=5V 2=GND 3=CANH 4=CANL）</b>；下方是 PWM 的 <b>24PIN 连接器 J16</b> 原理图。</figcaption>
+</figure>
+
+<div class="note">
+<b>从原理图能直接读出来的三行：</b><br>
+· <code>A1 ~ A8</code> 全部连到 <b>PGND（地）</b><br>
+· <code>B1 ~ B8</code> 全部连到 <b>VCC_5V_M（5V）</b> —— 就是这个电压供给 DBUS/舵机<br>
+· <code>C1 ~ C7</code> 是 7 路 PWM 信号，<code>C8</code> 是 <b>DBUS 信号</b>（经 R134 4.7K 接到反相电路 → USART3）
+</div>
+
+<h3>所以 3 针插头必须“竖着”跨 A-B-C 三排</h3>
+
+<svg viewBox="0 0 760 300" width="100%">
+  <style>
+    .pin { fill:#f4d58d; stroke:#8a6d1f; }
+    .hdr { font-size:13px; fill:#111; font-weight:700; }
+    .sml { font-size:11.5px; fill:#444; }
+  </style>
+
+  <!-- 正确 -->
+  <text class="hdr" x="30" y="26">✅ 正确：一列 = 一个通道（插头竖着）</text>
+  <g transform="translate(40,40)">
+    <text class="sml" x="-30" y="16">A</text>
+    <text class="sml" x="-30" y="46">B</text>
+    <text class="sml" x="-30" y="76">C</text>
+    <text class="sml" x="86" y="16" fill="#1e8449">← GND</text>
+    <text class="sml" x="86" y="46" fill="#1e8449">← 5V (VCC_5V_M)</text>
+    <text class="sml" x="86" y="76" fill="#1e8449">← 信号（C8=DBUS）</text>
+    <g>
+      <rect class="pin" x="0"  y="6"  width="14" height="14"/><rect class="pin" x="24" y="6"  width="14" height="14"/><rect class="pin" x="48" y="6"  width="14" height="14"/><rect class="pin" x="72" y="6"  width="14" height="14"/>
+      <rect class="pin" x="0"  y="36" width="14" height="14"/><rect class="pin" x="24" y="36" width="14" height="14"/><rect class="pin" x="48" y="36" width="14" height="14"/><rect class="pin" x="72" y="36" width="14" height="14"/>
+      <rect class="pin" x="0"  y="66" width="14" height="14"/><rect class="pin" x="24" y="66" width="14" height="14"/><rect class="pin" x="48" y="66" width="14" height="14"/><rect class="pin" x="72" y="66" width="14" height="14"/>
+    </g>
+    <!-- 3针插头竖跨 -->
+    <rect x="-4" y="2" width="22" height="82" fill="none" stroke="#1e8449" stroke-width="3" rx="4"/>
+    <text class="sml" x="-8" y="102" fill="#1e8449">3 针插头竖跨 A/B/C</text>
+  </g>
+
+  <!-- 错误 -->
+  <text class="hdr" x="420" y="26">❌ 错误：横着插 = 3 根全在 A 排</text>
+  <g transform="translate(430,40)">
+    <text class="sml" x="-30" y="16">A</text>
+    <text class="sml" x="-30" y="46">B</text>
+    <text class="sml" x="-30" y="76">C</text>
+    <g>
+      <rect class="pin" x="0"  y="6"  width="14" height="14"/><rect class="pin" x="24" y="6"  width="14" height="14"/><rect class="pin" x="48" y="6"  width="14" height="14"/><rect class="pin" x="72" y="6"  width="14" height="14"/>
+      <rect class="pin" x="0"  y="36" width="14" height="14"/><rect class="pin" x="24" y="36" width="14" height="14"/><rect class="pin" x="48" y="36" width="14" height="14"/><rect class="pin" x="72" y="36" width="14" height="14"/>
+      <rect class="pin" x="0"  y="66" width="14" height="14"/><rect class="pin" x="24" y="66" width="14" height="14"/><rect class="pin" x="48" y="66" width="14" height="14"/><rect class="pin" x="72" y="66" width="14" height="14"/>
+    </g>
+    <rect x="0" y="2" width="62" height="22" fill="none" stroke="#c0392b" stroke-width="3" rx="4"/>
+    <text class="sml" x="4" y="102" fill="#c0392b">三根针都在 GND 上 → 接收机没有 5V，灯不亮</text>
+  </g>
+</svg>
+
+<div class="danger">
+<b>这解释了今晚的所有现象：</b>接收机灯不亮（没 5V）、<code>sL/sR/col</code> 恒 0（没信号）。<br>
+因为 <b>24V 已经正常</b>（<code>vbat=26</code>、拔掉 USB 灯还在跑），所以问题几乎肯定在<b>这个插头的方向/接触</b>，而不是板子。
+</div>
+
+<h3>另外两个要一并核对的东西</h3>
+<table>
+<tr><th>检查</th><th>正确做法</th><th>错了会怎样</th></tr>
+<tr><td>排针间距</td><td>C 板是 <b>1.25 mm</b>（Molex PicoBlade，手册型号 <code>1.25T-7-4AW</code>）；对插的插头必须也是 1.25 mm</td><td>用 2.54 mm 舵机头硬插：看着进去了，实际中间那根针（5V）没接触</td></tr>
+<tr><td>C 板 24V 口</td><td>插 <b>24V IN</b></td><td>插成 24V OUT：输入保护电路不工作，5V 那一路可能起不来</td></tr>
+</table>
+
+<h2>2. C 板接口总览（手册 P.5）</h2>
+<figure>
+  <img src="img/manual/Cboard_p5.png" alt="C 板接口总览">
+  <figcaption>手册 P.5：整板接口编号与名称（24V 输入/输出、CAN1/CAN2、UART、PWM、DBUS、SWD、micro USB…）。</figcaption>
+</figure>
+
+<h2>3. 各个口的具体线序</h2>
+
+<div class="gallery">
+  <figure>
+    <img src="img/manual/Cboard_p11.png" alt="SWD 接口">
+    <figcaption><b>SWD（烧录）</b>：4 针，接 ST-Link 的 SWDIO / SWCLK / GND / <b>3.3V</b>。绝不接 5V。</figcaption>
+  </figure>
+  <figure>
+    <img src="img/manual/Cboard_p10.png" alt="micro USB">
+    <figcaption><b>micro USB</b>：接电脑看打印（COM 口，115200）。注意是 micro，不是 Type-C。</figcaption>
+  </figure>
+  <figure>
+    <img src="img/manual/Cboard_p15.png" alt="PWM 接口">
+    <figcaption><b>PWM 接口</b>：7 路，总输出 5A（同一个 VCC_5V_M）。</figcaption>
+  </figure>
+  <figure>
+    <img src="img/manual/Cboard_p16.png" alt="DBUS 接口">
+    <figcaption><b>DBUS 接口</b>：与 PWM 共用一个连接器，信号经反相电路接 USART3，<b>100 kbps</b>。</figcaption>
+  </figure>
+</div>
+
+<h2>4. 电调与电机（C610 / M2006）</h2>
+
+<div class="gallery">
+  <figure>
+    <img src="img/manual/C610_p4.png" alt="C610 安装连接">
+    <figcaption><b>C610 安装连接四步 + 线序</b>：① 电机 4-Pin 位置传感器 → 电调 4-Pin；② 电机三相 ↔ 电调三相（同色、防插反）；③ CAN 线 → 控制板 CAN 口（<b>红 = CAN_H，黑 = CAN_L</b>）；④ 电源线供电。</figcaption>
+  </figure>
+  <figure>
+    <img src="img/manual/C620_p25.png" alt="C620 接线页">
+    <figcaption><b>C620 使用说明 · 接线与安装页</b>（配合 M3508 时看这张：7-Pin 数据线、三相线、CAN 线、XT30 电源）。</figcaption>
+  </figure>
+  <figure>
+    <img src="img/manual/C620_p26.png" alt="C620 接线页 2">
+    <figcaption><b>C620 接线补充页</b>：接线顺序与端子位置。</figcaption>
+  </figure>
+</div>
+
+<h3>C610 反馈帧（手册 P.9）</h3>
+<table>
+<tr><th>字节</th><th>内容</th><th>说明</th></tr>
+<tr><td>DATA[0..1]</td><td>转子机械角度</td><td>0 ~ 8191（一圈 360°）</td></tr>
+<tr><td>DATA[2..3]</td><td>转子转速</td><td>单位 rpm</td></tr>
+<tr><td>DATA[4..5]</td><td>实际输出转矩电流</td><td>±10000（C620 是 ±16384）</td></tr>
+<tr><td>DATA[6..7]</td><td>Null</td><td><b>没有温度字段</b> —— 所以屏幕上 T=0 是正常的</td></tr>
+</table>
+
+<div class="note">
+控制帧：<code>0x200</code>（ID1–4）/ <code>0x1FF</code>（ID5–8），每帧 8 字节 = 4 个 int16。<br>
+反馈帧：<code>0x200 + ID</code>（ID=5 → <code>0x205</code>）。<br>
+代码里 <code>UserMotor</code> = <code>MOTOR_ID_5</code> → 所以电调要设 <b>ID = 5</b>（绿灯每秒闪 5 次）。
+</div>
+
+<h2>5. 电池与电池架（手册 P.10 / P.13）</h2>
+
+<div class="gallery">
+  <figure>
+    <img src="img/manual/Rack_p10.png" alt="电池架部件">
+    <figcaption><b>电池架部件</b>：① 置架 ② 电源开关 ③ 电池信息接口 ④ <b>电源输出口（XT60）</b>。</figcaption>
+  </figure>
+  <figure>
+    <img src="img/manual/Rack_p13.png" alt="电池架使用">
+    <figcaption><b>使用三步</b>：插电池 → 短按查电量、长按开机 → <b>再打开电池架开关</b>。最大持续电流 <b>35 A</b>。</figcaption>
+  </figure>
+</div>
+
+<h2>6. 今晚验证过的结论（可直接当基线）</h2>
+<table>
+<tr><th>项</th><th>结果</th><th>依据</th></tr>
+<tr><td>24 V 供电</td><td>✅ 正常</td><td><code>vbat=26</code>；拔掉 USB 后 RGB 灯仍在跑</td></tr>
+<tr><td>C610 CAN 回传</td><td>✅ 正常</td><td>手转轴 <code>ang</code> −13.12 → −29.98、<code>rpm</code> 出现 −3.05</td></tr>
+<tr><td>电调 ID</td><td>✅ = 5</td><td>数据出现在 <code>UserMotor</code> 上</td></tr>
+<tr><td>DBUS 5 V</td><td>❌ 未送达接收机</td><td>接收机灯不亮、<code>sL/sR=0</code>；板子 24V 正常 → 指向插头方向/间距</td></tr>
+</table>
+
+<h2>7. 下次进实验室按这个顺序（10 分钟）</h2>
+<ol>
+<li>把 C 板 DBUS 那个 3 针插头<b>拔下来</b>，看清它是<span style="color:#1e8449">竖着</span>还是<span style="color:#c0392b">横着</span>插的</li>
+<li>竖着重插（跨 A/B/C 三排），接收机灯应立刻亮</li>
+<li>灯亮了 → 对码 → 设 <b>W.BUS</b> + <b>端口 6</b> → 通道表 → 看 <code>sL/sR/col</code></li>
+<li>还不行 → 用万用表量：① 板子 A↔B 之间有没有 5 V ② 线是否通断（蜂鸣档）③ 接收机 +/− 之间有没有 5 V</li>
+</ol>
+
+<div class="ok">
+<b>一句话记牢：</b>C 板那排 24 针里，<b>A 排全是地、B 排全是 5V、C 排是信号</b>。所以 3 针插头<b>永远是竖着跨三排</b>——横着插只会插到一排地上，没有任何电压。
+</div>
+
+</body>
+</html>
