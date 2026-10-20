@@ -37,11 +37,25 @@ pyocd flash -t stm32f407ighx build\RM_Frame_C.hex
 
 ⚠️ **如果以后用 STM32CubeMX 重新生成代码，这 3 处会被覆盖**（它按 `CMakeLists_template.txt` 重写）。重新生成后照上表再改一遍，或者先别动 `.ioc`。
 
-## Keil 的事
+## Keil 的事（2026-10-20 实测状态）
 
-- 工程文件在 `MDK-ARM\RM_Frame_C.uvprojx`，本机**没装 Keil**（当前账户不是管理员，装不了；`tools\install-keil.ps1` 会拉 UAC）
-- 就算装了：**MDK-Lite 限 32 KB，而本固件 46.6 KB**，不买 License 只能看代码不能链接
-- 结论：**日常用 GCC 链**，Keil 只作对照/应急
+| 项 | 状态 |
+|---|---|
+| 安装位置 | **`D:\` 根目录**：IDE = `D:\UV4\UV4.exe`，编译器 = `D:\ARM\ARMCLANG\Bin`（ArmClang V6.19）|
+| 授权 | ✅ 标题栏显示 **`[Non-Commercial Use License]`** = MDK-Community 已激活，**没有 32 KB 限制**（`TOOLS.INI` 里的 `TOOL_VARIANT=mdk_lite` 是初装残值，别看它）|
+| 中文路径 | ❌ GUI **读不了** `F:\Program Files\交龙校内赛\...` 里的工程（弹 "An error occurred while reading the project file"）→ 已建**目录联接**：`D:\RM2027_Frame` → 本文件夹（同一份文件，不是副本），Keil 里请打开 **`D:\RM2027_Frame\MDK-ARM\RM_Frame_C.uvprojx`** |
+| 器件包 | ⚠️ 工程要求 `Keil.STM32F4xx_DFP.3.0.0` + `ARM::CMSIS CORE 5.4.0`；文件已放到位（`D:\Keil\STM32F4xx_DFP\3.0.0`、`D:\ARM\CMSIS\5.7.0`），但 uVision 的**包索引**没更新，命令行仍报 `Error #543 / #541`。**包索引只能由 Pack Installer 更新**，需要在 GUI 里点 Install |
+| 命令行编译 | ✅ 可用（`UV4 -b <工程> -o <日志>`，真实路径即可，**不要用 subst 的盘符**，会 0xC0000005 崩）|
+
+**结论：日常构建/烧录继续用 GCC 链**（已验证 46 564 B，一条命令）；Keil 只在包索引修好后用作调试器 UI。
+
+### 修 Keil 包索引的三步（GUI）
+
+1. 任务栏打开 **Pack Installer**（标题 `Pack Installer - D:`）
+2. `Packs` 标签 → 勾 **`ARM::CMSIS 5.7.0`** 和 **`Keil::STM32F4xx_DFP 3.0.0`** → 点 `Install`
+3. μVision 里打开 `D:\RM2027_Frame\MDK-ARM\RM_Frame_C.uvprojx` → `F7` 编译
+
+> 页面如果提示 `use MicroLIB` 不支持 C++，那是官方工程自带设置，先不管（能编过；真报错再在 `Options for Target → Target` 里取消勾选 Use MicroLIB）。
 
 ## TODO 在哪（框架留的空 + 交接后的现状）
 

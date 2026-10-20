@@ -36,8 +36,8 @@ cd 02_sim\python; python mecanum_pid_sim.py
 - **合并交接包后仍然编译通过：FLASH 46 564 B / RAM 17 112 B**（+4.7 KB 是 BMI088 IMU 驱动 + UsbPrintf）
 - `pyocd` 认得到 C 板的芯片型号 `stm32f407ighx`
 - MATLAB R2026a 有，**Simulink 没装**（目录只有 5.4 MB 的壳），4 个 `.slx` 打不开
-- Keil MDK **未装**（本机没有管理员权限，装不了；见 `tools\install-keil.ps1`）
-- 固件 46.6 KB > MDK-Lite 的 32 KB 上限，就算装了 Keil 也得走 License，所以主用 GCC 链
+- **Keil 已装**在 `D:\`（IDE `D:\UV4\UV4.exe`，ArmClang V6.19），**Community 授权已激活**（标题栏 `[Non-Commercial Use License]`，无 32 KB 限制）
+- Keil 的两个坑：① GUI 读不了中文路径的工程 → 用目录联接 **`D:\RM2027_Frame`**（指向同一份文件）打开；② 器件包索引未更新（`#543/#541`），需在 Pack Installer 里点一次 Install。细节见 `01_firmware\README-本地构建说明.md`
 - **Git 只装在 WSL 里**（Windows 侧没有 `git` 命令）。仓库已建好，用 `wsl -- git log` 看；装 Git for Windows 需要管理员
 - 与交接包对比：**9 个源码文件里只有 2 个不同** —— `UserTask.cpp`（IMU 全套）和 `Device.cpp`（启用了 IWDG）。其余字节相同，说明两边改的是同一份框架，可以安全互相同步
 

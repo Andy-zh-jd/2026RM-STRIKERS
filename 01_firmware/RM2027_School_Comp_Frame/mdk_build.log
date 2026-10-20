@@ -1,0 +1,9 @@
+*** Using Compiler 'V6.19', folder: 'D:\ARM\ARMCLANG\Bin'
+*** Warning: You are compiling one or more files of source type C++ and have selected 'use MicroLIB'. MicroLIB does not support C++!
+  
+Build target 'RM_Frame_C'
+Error instantiating RTE components
+Error #543: Device STM32F407IGHx(STMicroelectronics) not found, pack 'Keil.STM32F4xx_DFP' is not installed
+Error #541: 'ARM::CMSIS:CORE:5.4.0' component is missing (previously found in pack 'ARM.CMSIS')
+Target not created.
+Build Time Elapsed:  00:00:00

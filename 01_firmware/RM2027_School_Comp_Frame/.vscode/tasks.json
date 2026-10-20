@@ -68,6 +68,24 @@
       "detail": "起来后再用 arm-none-eabi-gdb build/RM_Frame_C.elf 连 localhost:3333"
     },
     {
+      "label": "keil 打开工程",
+      "type": "shell",
+      "command": "D:\\UV4\\UV4.exe",
+      "args": ["${workspaceFolder}\\MDK-ARM\\RM_Frame_C.uvprojx"],
+      "options": { "cwd": "D:\\UV4" },
+      "problemMatcher": [],
+      "detail": "本机 Keil 装在 D:\\ 根目录（D:\\UV4\\UV4.exe）"
+    },
+    {
+      "label": "keil 命令行编译",
+      "type": "shell",
+      "command": "D:\\UV4\\UV4.exe",
+      "args": ["-b", "${workspaceFolder}\\MDK-ARM\\RM_Frame_C.uvprojx", "-o", "${workspaceFolder}\\mdk_build.log"],
+      "options": { "cwd": "D:\\UV4" },
+      "problemMatcher": [],
+      "detail": "日志 mdk_build.log；UV4 返回 0=无错 1=有警告 2+=有错误（路径要用真实路径，别用 subst 的 K:，实测会崩）"
+    },
+    {
       "label": "clean 清理",
       "type": "shell",
       "command": "Remove-Item -Recurse -Force build",
