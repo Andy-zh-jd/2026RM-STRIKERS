@@ -3,6 +3,16 @@
 //
 #include "ControlTask.h"
 void CtrlHandle(){
+    /* ===== 2026-10-21 安全修复 =====
+     * 没有接收机时 rcInfo 是零初始化 → sLeft 默认 0 = MID_POS → 会误判"用户选了中档"
+     * → UserSetSpeed(0) 把 stopFlag 解开（实测 stop 从 1 变成 0）。
+     * 所以先判断遥控是否在线：100ms 内没收到帧 → 强制进安全态，直接返回。 */
+    if (!RemoteAlive()) {
+        ChassisStop();
+        UserStop();
+        return;
+    }
+
     if (RemoteControl::rcInfo.sRight == DOWN_POS){
         //右侧下三档，急停模式，请勿更改！！！
         ChassisStop();

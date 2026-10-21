@@ -67,4 +67,11 @@ extern void USART3_IRQHandler(void);
 }
 #endif
 
+/* 2026-10-21：遥控「在线」判断。
+ * 为什么需要：没有接收机时 rcInfo 是零初始化，sLeft 默认 = 0 = MID_POS，
+ * 于是 CtrlHandle 会以为"用户选了中档" → 解开 stopFlag → 电机失去安全态（实测踩到）。
+ * RemoteAlive() 超过 100ms 没收到合法 DBUS 帧就返回 0，上层据此强制进安全态。 */
+extern volatile uint32_t rc_last_tick;
+uint8_t RemoteAlive(void);
+
 #endif //RM_FRAME_C_REMOTECONTROL_H

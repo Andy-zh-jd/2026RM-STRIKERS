@@ -10,7 +10,7 @@ extern volatile uint8_t key_raw_state;
 // 用途：接电池后先看这个数对不对（换算系数 /22*222 疑似笔误，要用万用表核对）
 extern volatile float vccBat;
 // 2026-10-20：底盘四个电机对象定义在 ChassisTask.cpp，这里只是引用（CMFL = ID1 左前轮）
-extern Motor CMFL;
+extern Motor CMFL, CMFR, CMBL, CMBR;
 
 /* ===== 调试开关 =====
  * DBG_MINIMAL = 1 → 只打印，不读 IMU（跳过 SPI）、不碰机构。
@@ -18,7 +18,7 @@ extern Motor CMFL;
  *   最小模式下 USB 正常 → 说明是某个阻塞外设（最可能是 SPI 读 IMU 超时）拖死了 1ms 中断。
  * DBG_UART = 1 → 同一行数据同时从 UART1（PA9=TX，115200）发出去，USB 挂了也能用 CH340 看。
  *   ⚠️ HAL_UART_Transmit 是阻塞的（60 字节≈5ms），塞进 1ms 中断会拖垮 USB 控制传输，默认关。 */
-#define DBG_MINIMAL 0
+#define DBG_MINIMAL 1
 #define DBG_UART    0
 
 /* IMU 的 SPI 读超时：原来是 100ms —— 一旦 SPI 卡一下，1ms 中断就被占住 100ms，
@@ -302,13 +302,13 @@ void UserHandle()
             AppendF2("az=", g_accelG[2]);
             AppendF2("vbat=", vccBat);           // 电池电压（换算可疑，用万用表对）
         } else {
-            /* ===== B 行：电机（见 DBG_MOTOR）+ 遥控器 ===== */
-            AppendF2("rpm=",  DBG_MOTOR.state.speed);        // 输出轴转速 RPM（反馈）
-            AppendF2("tgt=",  DBG_MOTOR.targetSpeed);        // 目标转速 RPM（指令）
-            AppendI("cur=",   (int)DBG_MOTOR.state.moment);  // 实际电流（C610 满量程 10000，C620 是 16384）
-            AppendF2("ang=",  DBG_MOTOR.state.angle);        // 输出轴累计角度（度）
-            AppendF2("T=",    DBG_MOTOR.state.temperature);  // 温度：C610 不报（恒 0），C620 有
-            AppendI("stop=",  (int)DBG_MOTOR.stopFlag);      // 1=不输出（安全态）
+            /* ===== B 行：四个底盘轮子（CMFL/FR/BL/BR = ID1~4）+ 机构目标 + 档位 ===== */
+            AppendF2("r1=", CMFL.state.speed);      // 左前 输出轴 RPM
+            AppendF2("r2=", CMFR.state.speed);      // 右前
+            AppendF2("r3=", CMBL.state.speed);      // 左后
+            AppendF2("r4=", CMBR.state.speed);      // 右后
+            AppendF2("tgt=", UserMotor.targetSpeed); // 机构电机目标（SB 中档时有效）
+            AppendI("stop=", (int)CMFL.stopFlag);    // 1=不输出（安全态）
             AppendI("sL=",    (int)RemoteControl::rcInfo.sLeft);   // 97上/0中/158下
             AppendI("sR=",    (int)RemoteControl::rcInfo.sRight);
             AppendF2("col=",  RemoteControl::rcInfo.right_col);    // -1~1

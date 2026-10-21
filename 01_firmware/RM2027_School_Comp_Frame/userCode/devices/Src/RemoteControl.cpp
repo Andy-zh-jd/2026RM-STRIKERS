@@ -9,6 +9,14 @@ RC_ctrl_t RemoteControl::rc_ctrl;
 
 uint8_t RemoteControl::sbus_rx_buf[2][SBUS_RX_BUF_NUM];
 
+/* 最后一次收到合法 DBUS 帧的时刻（HAL_GetTick 单位），给 RemoteAlive() 用 */
+volatile uint32_t rc_last_tick = 0;
+
+uint8_t RemoteAlive(void)
+{
+    return (uint8_t)((HAL_GetTick() - rc_last_tick) < 100u);   /* 100ms 内收到过帧才算在线 */
+}
+
 void RemoteControl::init() {
     //enable the DMA transfer for the receiver request
     //使能 DMA 串口接收
@@ -66,6 +74,7 @@ void RemoteControl::sbus_to_rc(const volatile uint8_t *sbus_buf) {
     rcInfo.sRight = (SWITCH_STATE_E)rc_ctrl.rc.s[1];
     rcInfo.optional[0] = rc_ctrl.rc.optional[0];
     rcInfo.optional[1] = rc_ctrl.rc.optional[1];
+    rc_last_tick = HAL_GetTick();      /* 标记：遥控在线 */
 
 }
 void RemoteControl::ITHandle() {
