@@ -18,8 +18,13 @@ extern Motor CMFL;
  *   最小模式下 USB 正常 → 说明是某个阻塞外设（最可能是 SPI 读 IMU 超时）拖死了 1ms 中断。
  * DBG_UART = 1 → 同一行数据同时从 UART1（PA9=TX，115200）发出去，USB 挂了也能用 CH340 看。
  *   ⚠️ HAL_UART_Transmit 是阻塞的（60 字节≈5ms），塞进 1ms 中断会拖垮 USB 控制传输，默认关。 */
-#define DBG_MINIMAL 0
+#define DBG_MINIMAL 1
 #define DBG_UART    0
+
+/* IMU 的 SPI 读超时：原来是 100ms —— 一旦 SPI 卡一下，1ms 中断就被占住 100ms，
+ * USB 控制传输彻底没机会响应，表现就是「设备能枚举、但 COM 口打不开(参数错误 87)」。
+ * 2026-10-20 实测确认：跳过 IMU 后串口立刻正常。所以收紧到 1ms，且 SPI 忙时跳过本帧。 */
+#define IMU_SPI_TIMEOUT_MS 1
 
 void UsbPrintf(const char *fmt, ...)
 {
@@ -51,17 +56,20 @@ static uint8_t IMU_ReadReg(uint8_t isAccel, uint8_t reg)
     uint8_t tx[3] = {(uint8_t)(reg | 0x80), 0x00, 0x00}; // 最高位置 1 = 读
     uint8_t rx[3] = {0};
 
+    /* SPI 上次没做完 → 直接跳过这一帧，绝不阻塞（否则会拖死 1ms 中断和 USB） */
+    if (hspi1.State != HAL_SPI_STATE_READY) return 0;
+
     if (isAccel)
     {
         CS_ACCEL_L();
-        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 3, 100); // 地址 + dummy + 数据
+        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 3, IMU_SPI_TIMEOUT_MS); // 地址 + dummy + 数据
         CS_ACCEL_H();
         return rx[2]; // 加速度计要跳过 1 个 dummy
     }
     else
     {
         CS_GYRO_L();
-        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 2, 100); // 地址 + 数据
+        HAL_SPI_TransmitReceive(&hspi1, tx, rx, 2, IMU_SPI_TIMEOUT_MS); // 地址 + 数据
         CS_GYRO_H();
         return rx[1]; // 陀螺仪不用 dummy
     }
@@ -74,11 +82,11 @@ static void IMU_WriteReg(uint8_t isAccel, uint8_t reg, uint8_t data)
 
     if (isAccel) {
         CS_ACCEL_L();
-        HAL_SPI_Transmit(&hspi1, tx, 2, 100);          // 写不用 Receive
+        HAL_SPI_Transmit(&hspi1, tx, 2, IMU_SPI_TIMEOUT_MS);          // 写不用 Receive
         CS_ACCEL_H();
     } else {
         CS_GYRO_L();
-        HAL_SPI_Transmit(&hspi1, tx, 2, 100);
+        HAL_SPI_Transmit(&hspi1, tx, 2, IMU_SPI_TIMEOUT_MS);
         CS_GYRO_H();
     }
 }
@@ -93,14 +101,17 @@ static void IMU_ReadBytes(uint8_t isAccel, uint8_t reg, uint8_t *buf, uint8_t n)
     uint8_t len = (uint8_t)(n + (isAccel ? 2 : 1));   // 加速度计多 1 个 dummy
     tx[0] = (uint8_t)(reg | 0x80);
 
+    /* 同上：SPI 忙就跳过，不阻塞 */
+    if (hspi1.State != HAL_SPI_STATE_READY) return;
+
     if (isAccel) {
         CS_ACCEL_L();
-        HAL_SPI_TransmitReceive(&hspi1, tx, rx, len, 100);
+        HAL_SPI_TransmitReceive(&hspi1, tx, rx, len, IMU_SPI_TIMEOUT_MS);
         CS_ACCEL_H();
         for (uint8_t i = 0; i < n; i++) buf[i] = rx[2 + i];
     } else {
         CS_GYRO_L();
-        HAL_SPI_TransmitReceive(&hspi1, tx, rx, len, 100);
+        HAL_SPI_TransmitReceive(&hspi1, tx, rx, len, IMU_SPI_TIMEOUT_MS);
         CS_GYRO_H();
         for (uint8_t i = 0; i < n; i++) buf[i] = rx[1 + i];
     }
@@ -261,7 +272,9 @@ void UserHandle()
     static uint32_t cnt = 0;
     static uint8_t  page = 0;        // A/B 两页交替，避免一行太长被截断
 
-    if (!DBG_MINIMAL) IMU_Update();  // ★ 每 1ms 采样（1kHz）；最小模式跳过 SPI
+    /* IMU 降频到 200Hz（每 5ms 读一次）：1ms 中断里做 SPI 太挤，且 200Hz 对姿态足够 */
+    static uint32_t imuDiv = 0;
+    if (!DBG_MINIMAL && (++imuDiv >= 5)) { imuDiv = 0; IMU_Update(); }
 
     if (++cnt >= 100) {              // 每 100ms 打一行，A/B 各 5 Hz
         cnt = 0;
