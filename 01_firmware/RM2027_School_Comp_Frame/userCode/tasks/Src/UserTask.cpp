@@ -185,10 +185,15 @@ static void IMU_Update(void)
 
 PID_Regulator_t userPidRegulator = {
     .kp = 60,
-    .ki = 0,
+    // 2026-10-21：加积分消静差。实测纯 P 时 tgt=20.7 → rpm 只到 14.3（静差 30%）。
+    // 注意框架的积分是 errSum += err（不乘 dt），所以 ki 量级是 0.1~1.0，不是 10。
+    .ki = 0.5f,
     .kd = 0,
     .componentKpMax = 10000,
-    .componentKiMax = 0,
+    // ki 和 componentKiMax 必须一起改：限幅公式是 INRANGE(errSum, ±componentKiMax/ki)，
+    // 只改 ki 而 componentKiMax=0 → 积分立刻被压成 0，等于没加 I。
+    // 6000 ≈ 稳态能贡献的最大电流（占满量程 10000 的 60%）。
+    .componentKiMax = 6000,
     .componentKdMax = 0,
     .outputMax = 10000 // 2006电机输出电流上限，可以调小，勿调大
 };
@@ -302,13 +307,15 @@ void UserHandle()
             AppendF2("az=", g_accelG[2]);
             AppendF2("vbat=", vccBat);           // 电池电压（换算可疑，用万用表对）
         } else {
-            /* ===== B 行：四个底盘轮子（CMFL/FR/BL/BR = ID1~4）+ 机构目标 + 档位 ===== */
-            AppendF2("r1=", CMFL.state.speed);      // 左前 输出轴 RPM
-            AppendF2("r2=", CMFR.state.speed);      // 右前
-            AppendF2("r3=", CMBL.state.speed);      // 左后
-            AppendF2("r4=", CMBR.state.speed);      // 右后
-            AppendF2("tgt=", UserMotor.targetSpeed); // 机构电机目标（SB 中档时有效）
-            AppendI("stop=", (int)CMFL.stopFlag);    // 1=不输出（安全态）
+            /* ===== B 行：机构电机(M2006) 详情 + 四个底盘轮子 + 档位 ===== */
+            AppendF2("m=",   UserMotor.state.speed);  // M2006 输出轴 rpm（反馈）
+            AppendF2("tgt=", UserMotor.targetSpeed);  // M2006 目标 rpm
+            AppendI("cur=",  (int)UserMotor.state.moment);
+            AppendI("st=",   (int)UserMotor.stopFlag);
+            AppendF2("r1=",  CMFL.state.speed);       // 底盘四轮（ID1~4）
+            AppendF2("r2=",  CMFR.state.speed);
+            AppendF2("r3=",  CMBL.state.speed);
+            AppendF2("r4=",  CMBR.state.speed);
             AppendI("sL=",    (int)RemoteControl::rcInfo.sLeft);   // 97上/0中/158下
             AppendI("sR=",    (int)RemoteControl::rcInfo.sRight);
             AppendF2("col=",  RemoteControl::rcInfo.right_col);    // -1~1
