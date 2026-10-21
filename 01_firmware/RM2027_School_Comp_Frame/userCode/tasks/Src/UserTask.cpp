@@ -12,6 +12,15 @@ extern volatile float vccBat;
 // 2026-10-20：底盘四个电机对象定义在 ChassisTask.cpp，这里只是引用（CMFL = ID1 左前轮）
 extern Motor CMFL;
 
+/* ===== 调试开关 =====
+ * DBG_MINIMAL = 1 → 只打印，不读 IMU（跳过 SPI）、不碰机构。
+ *   用来隔离「USB 能枚举但 COM 口打不开」这类问题：
+ *   最小模式下 USB 正常 → 说明是某个阻塞外设（最可能是 SPI 读 IMU 超时）拖死了 1ms 中断。
+ * DBG_UART = 1 → 同一行数据同时从 UART1（PA9=TX，115200）发出去，USB 挂了也能用 CH340 看。
+ *   ⚠️ HAL_UART_Transmit 是阻塞的（60 字节≈5ms），塞进 1ms 中断会拖垮 USB 控制传输，默认关。 */
+#define DBG_MINIMAL 0
+#define DBG_UART    0
+
 void UsbPrintf(const char *fmt, ...)
 {
     static char buf[256];
@@ -111,6 +120,7 @@ static void IMU_Update(void);
 void IMU_Calibrate(void)
 {
     float sum[3] = {0};
+    if (DBG_MINIMAL) return;      /* 最小调试模式下不标定 */
     for (int i = 0; i < 500; i++) {
         IMU_Update();
         sum[0] += g_gyro[0];
@@ -251,7 +261,7 @@ void UserHandle()
     static uint32_t cnt = 0;
     static uint8_t  page = 0;        // A/B 两页交替，避免一行太长被截断
 
-    IMU_Update();                    // ★ 每 1ms 采样（1kHz）
+    if (!DBG_MINIMAL) IMU_Update();  // ★ 每 1ms 采样（1kHz）；最小模式跳过 SPI
 
     if (++cnt >= 100) {              // 每 100ms 打一行，A/B 各 5 Hz
         cnt = 0;
