@@ -18,7 +18,7 @@ extern Motor CMFL;
  *   最小模式下 USB 正常 → 说明是某个阻塞外设（最可能是 SPI 读 IMU 超时）拖死了 1ms 中断。
  * DBG_UART = 1 → 同一行数据同时从 UART1（PA9=TX，115200）发出去，USB 挂了也能用 CH340 看。
  *   ⚠️ HAL_UART_Transmit 是阻塞的（60 字节≈5ms），塞进 1ms 中断会拖垮 USB 控制传输，默认关。 */
-#define DBG_MINIMAL 1
+#define DBG_MINIMAL 0
 #define DBG_UART    0
 
 /* IMU 的 SPI 读超时：原来是 100ms —— 一旦 SPI 卡一下，1ms 中断就被占住 100ms，
@@ -92,6 +92,9 @@ static void IMU_WriteReg(uint8_t isAccel, uint8_t reg, uint8_t data)
 }
 
 int16_t g_gyro[3] = {0}, g_accel[3] = {0};
+/* SPI 连续失败计数：超过阈值就彻底停读 IMU，避免坏传感器反复拖动 1ms 中断 */
+static uint8_t g_spiErr = 0;
+#define IMU_MAX_FAILS 5
 
 /* 连续读 n 个字节 */
 static void IMU_ReadBytes(uint8_t isAccel, uint8_t reg, uint8_t *buf, uint8_t n)
@@ -106,12 +109,12 @@ static void IMU_ReadBytes(uint8_t isAccel, uint8_t reg, uint8_t *buf, uint8_t n)
 
     if (isAccel) {
         CS_ACCEL_L();
-        HAL_SPI_TransmitReceive(&hspi1, tx, rx, len, IMU_SPI_TIMEOUT_MS);
+        { HAL_StatusTypeDef st = HAL_SPI_TransmitReceive(&hspi1, tx, rx, len, IMU_SPI_TIMEOUT_MS); if (st != HAL_OK) { if (g_spiErr < 255) g_spiErr++; } else g_spiErr = 0; }
         CS_ACCEL_H();
         for (uint8_t i = 0; i < n; i++) buf[i] = rx[2 + i];
     } else {
         CS_GYRO_L();
-        HAL_SPI_TransmitReceive(&hspi1, tx, rx, len, IMU_SPI_TIMEOUT_MS);
+        { HAL_StatusTypeDef st = HAL_SPI_TransmitReceive(&hspi1, tx, rx, len, IMU_SPI_TIMEOUT_MS); if (st != HAL_OK) { if (g_spiErr < 255) g_spiErr++; } else g_spiErr = 0; }
         CS_GYRO_H();
         for (uint8_t i = 0; i < n; i++) buf[i] = rx[1 + i];
     }
@@ -152,6 +155,7 @@ float g_gyroLpf[3] = {0};
 
 static void IMU_Update(void)
 {
+    if (g_spiErr >= IMU_MAX_FAILS) return;   /* IMU 已判死：不再尝试，绝不拖累 1ms 中断 */
     uint8_t b[6] = {0};
 
     IMU_ReadBytes(0, 0x02, b, 6);
@@ -267,6 +271,14 @@ static void AppendI(const char *name, int v)
 }
 
 
+/* 给机构电机（UserMotor，ID5）设目标转速：单位 输出轴 rpm，正负 = 方向。
+ * 由 ControlTask.cpp 的 CtrlHandle() 调用（左三档 SB 中位时，右摇杆控制）。
+ * 注意：SetTargetSpeed 会清 stopFlag，所以这是“允许输出”的唯一开关；
+ *      SC 拨到下档时 CtrlHandle 会调 UserStop() 重新扣上。 */
+void UserSetSpeed(float _rpm)
+{
+    UserMotor.SetTargetSpeed(_rpm);
+}
 void UserHandle()
 {
     static uint32_t cnt = 0;

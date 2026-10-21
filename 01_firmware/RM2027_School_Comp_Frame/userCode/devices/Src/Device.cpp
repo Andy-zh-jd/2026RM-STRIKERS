@@ -256,7 +256,13 @@ int main(void)
     HAL_Init();
 
     /* USER CODE BEGIN Init */
-
+    // 2026-10-21：把 SysTick 优先级提到最高（0）。
+    // 原因：所有 HAL 函数的超时都是拿 HAL_GetTick() 差值判的。原代码里 SysTick 优先级最低，
+    // 一旦在 TIM10 的 1ms 中断里调用 HAL_SPI_TransmitReceive（超时 100ms），SysTick 无法抢占
+    // → tick 不涨 → "超时"永不触发 → 死循环 → 整个 1ms 中断回不来 → USB 控制传输全废
+    // （现象：设备能枚举，但 COM 口打不开，报 参数错误 87）。
+    // 把 SysTick 提到 0 优先级后，所有 HAL 超时才真正有效。
+    HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
     /* USER CODE END Init */
 
     /* Configure the system clock */

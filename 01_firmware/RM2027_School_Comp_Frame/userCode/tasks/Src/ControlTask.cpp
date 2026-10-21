@@ -19,8 +19,14 @@ void CtrlHandle(){
             ChassisSetVelocity(RemoteControl::rcInfo.right_col*3.0,
                                RemoteControl::rcInfo.right_rol*3.0,RemoteControl::rcInfo.left_rol*60);
             break;
-        case MID_POS: //左侧二档
-
+        case MID_POS: //左侧二档：用右摇杆控制 M2006（机构电机）
+            // 2026-10-21：台架验证用。满杆 = ±30 rpm（输出轴，36:1 减速后很慢，安全）。
+            // 中位 ±8% 死区，防止摇杆零点漂移导致电机自己爬。
+            {
+                float c = RemoteControl::rcInfo.right_col;
+                if (c > -0.08f && c < 0.08f) c = 0.0f;
+                UserSetSpeed(c * 30.0f);
+            }
             break;
         case DOWN_POS: //左侧三档
 

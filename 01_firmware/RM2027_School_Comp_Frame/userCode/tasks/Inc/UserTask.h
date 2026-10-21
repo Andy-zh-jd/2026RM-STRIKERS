@@ -24,4 +24,7 @@ extern Servo ClawServo,TurnLServo,TurnRServo,ShovelLServo,ShovelRServo;
 void UserStop();
 void UserHandle();
 void UserInit();
+/* 给机构电机（UserMotor，M2006，ID5）设目标转速，单位：输出轴 rpm，正负 = 方向。
+ * 2026-10-21 加：让遥控器能直接控制 M2006（用于台架验证“电机按指令转”）。 */
+void UserSetSpeed(float _rpm);
 #endif //RM_FRAME_C_USERTASK_H
