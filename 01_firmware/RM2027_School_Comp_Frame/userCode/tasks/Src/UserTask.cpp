@@ -283,6 +283,9 @@ void UserPollSlow(void)
 /* ---------- 拼行缓冲区：攒够一整行再一次性发 ---------- */
 static char g_line[128];
 
+/* SWD 快照区：8 个 int32，见 UserHandle 里的赋值说明 */
+volatile int32_t g_dbg[8];
+
 /* 调试打印看哪个电机：
  *   M2006 + C610  → UserMotor（ID5，0x1FF 帧，反馈 0x205，减速比 36）
  *   M3508 + C620  → CMFL     （ID1，0x200 帧，反馈 0x201，减速比 19.2032）
@@ -328,6 +331,18 @@ void UserHandle()
     if (++cnt >= 100) {              // 每 100ms 打一行，A/B 各 5 Hz
         cnt = 0;
         g_line[0] = '\0';
+
+        /* ===== 2026-10-21：SWD 快照区 =====
+         * USB CDC 打不开时，用 ST-Link 直接读这块 RAM 就能看数据（完全绕开 USB）。
+         * 单位：转速/电压/摇杆 ×100，电流/档位 原值。 */
+        g_dbg[0] = (int32_t)(UserMotor.targetSpeed * 100.0f);
+        g_dbg[1] = (int32_t)(UserMotor.state.speed * 100.0f);
+        g_dbg[2] = (int32_t)UserMotor.state.moment;
+        g_dbg[3] = (int32_t)UserMotor.stopFlag;
+        g_dbg[4] = (int32_t)(vccBat * 100.0f);
+        g_dbg[5] = (int32_t)RemoteControl::rcInfo.sLeft;
+        g_dbg[6] = (int32_t)RemoteControl::rcInfo.sRight;
+        g_dbg[7] = (int32_t)(RemoteControl::rcInfo.right_col * 100.0f);
 
         if (page == 0) {
             /* ===== A 行：姿态 + 电池电压 ===== */
