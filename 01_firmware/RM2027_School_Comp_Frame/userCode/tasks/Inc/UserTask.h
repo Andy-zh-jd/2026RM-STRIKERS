@@ -27,4 +27,6 @@ void UserInit();
 /* 给机构电机（UserMotor，M2006，ID5）设目标转速，单位：输出轴 rpm，正负 = 方向。
  * 2026-10-21 加：让遥控器能直接控制 M2006（用于台架验证“电机按指令转”）。 */
 void UserSetSpeed(float _rpm);
+/* 慢任务：在主循环 while(1) 里调用（放 IMU 的 SPI 读，避免拖死中断） */
+void UserPollSlow(void);
 #endif //RM_FRAME_C_USERTASK_H

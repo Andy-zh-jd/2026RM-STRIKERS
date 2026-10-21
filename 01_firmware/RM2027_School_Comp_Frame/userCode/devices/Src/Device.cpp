@@ -316,6 +316,7 @@ int main(void)
         /* USER CODE END WHILE */
 
         /* USER CODE BEGIN 3 */
+        UserPollSlow();   // 2026-10-21：IMU 的 SPI 读放主循环，绝不占 1ms 中断
     }
     /* USER CODE END 3 */
 }

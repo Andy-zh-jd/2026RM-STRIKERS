@@ -19,6 +19,11 @@ extern Motor CMFL, CMFR, CMBL, CMBR;
  * DBG_UART = 1 → 同一行数据同时从 UART1（PA9=TX，115200）发出去，USB 挂了也能用 CH340 看。
  *   ⚠️ HAL_UART_Transmit 是阻塞的（60 字节≈5ms），塞进 1ms 中断会拖垮 USB 控制传输，默认关。 */
 #define DBG_MINIMAL 1
+/* 1 = IMU 只读一次 chip id 然后彻底不读（体检用）*/
+#define DBG_IMU_IDONLY 1
+/* IMU 周期读取的分频：1ms 中断里每 IMU_DIV 次读一次
+ *   IMU_DIV=100 → 10Hz（T1 测试）；5 → 200Hz（最终目标）；1 → 1kHz（之前会卡死）*/
+#define IMU_DIV 5
 #define DBG_UART    0
 
 /* IMU 的 SPI 读超时：原来是 100ms —— 一旦 SPI 卡一下，1ms 中断就被占住 100ms，
@@ -222,6 +227,16 @@ void UserStop()
  */
 void UserInit()
 {
+    /* ===== 2026-10-21：IMU 体检模式 =====
+     * 只读一次 chip id（预期 加速度计 0x1E / 陀螺仪 0x0F），然后彻底不读 IMU。
+     * 目的：判断 BMI088 是活着还是坏了（带 IMU 的完整固件会把 USB 拖死，无法调试）。 */
+#if DBG_IMU_IDONLY
+    IMU_ReadReg(1, 0x00);          /* 假读一次：把加速度计从 I2C 切到 SPI（CS 上升沿） */
+    HAL_Delay(10);
+    g_accelId = IMU_ReadReg(1, 0x00);   /* 真正的 ID 读 */
+    g_gyroId  = IMU_ReadReg(0, 0x00);
+    return;                        /* 不做唤醒、不做标定、不进周期读 */
+#else
     /* ---- 1. 先把加速度计从 I2C 切到 SPI ---- */
     IMU_ReadReg(1, 0x00);       // 虚假读取，结果作废
     HAL_Delay(10);
@@ -240,6 +255,7 @@ void UserInit()
     g_gyroId  = IMU_ReadReg(0, 0x00);
 
     IMU_Calibrate();      // ★ 标定（这一秒内别碰板子！）
+#endif
 }
 
 
@@ -247,6 +263,22 @@ void UserInit()
 /***
  * 用户自定义任务主循环
  */
+
+/* ===== 2026-10-21：IMU 读取从 1ms 中断搬到主循环 =====
+ * 现象：只要在 1ms 中断里做 SPI 读（哪怕 10Hz），USB 就会「能枚举但打不开」。
+ * 做法：中断里只置一个请求标志（微秒级），真正的 SPI 传输放到 while(1) 里做。
+ * 这也是标准的「中断做实时、主循环做慢速 IO」分层。 */
+static volatile uint8_t imuReadReq = 0;
+uint32_t g_imuReadCount = 0;      /* 累计实际读了多少次（可在串口看）*/
+
+void UserPollSlow(void)
+{
+    if (imuReadReq) {
+        imuReadReq = 0;
+        IMU_Update();
+        g_imuReadCount++;
+    }
+}
 
 /* ---------- 拼行缓冲区：攒够一整行再一次性发 ---------- */
 static char g_line[128];
@@ -291,7 +323,7 @@ void UserHandle()
 
     /* IMU 降频到 200Hz（每 5ms 读一次）：1ms 中断里做 SPI 太挤，且 200Hz 对姿态足够 */
     static uint32_t imuDiv = 0;
-    if (!DBG_MINIMAL && (++imuDiv >= 5)) { imuDiv = 0; IMU_Update(); }
+    if (!DBG_MINIMAL) { if (++imuDiv >= IMU_DIV) { imuDiv = 0; imuReadReq = 1; } }
 
     if (++cnt >= 100) {              // 每 100ms 打一行，A/B 各 5 Hz
         cnt = 0;
@@ -305,6 +337,10 @@ void UserHandle()
             AppendF2("ax=", g_accelG[0]);        // 加速度 g（静止 az≈1）
             AppendF2("ay=", g_accelG[1]);
             AppendF2("az=", g_accelG[2]);
+            AppendI("aid=", (int)g_accelId);      // 加速度计 ID，正常 0x1E = 十进制 30
+            AppendI("gid=", (int)g_gyroId);       // 陀螺仪 ID，正常 0x0F = 十进制 15
+            AppendI("serr=", (int)g_spiErr);      // SPI 连续失败计数
+            AppendI("icnt=", (int)g_imuReadCount); // 主循环里实际读了多少次
             AppendF2("vbat=", vccBat);           // 电池电压（换算可疑，用万用表对）
         } else {
             /* ===== B 行：机构电机(M2006) 详情 + 四个底盘轮子 + 档位 ===== */
