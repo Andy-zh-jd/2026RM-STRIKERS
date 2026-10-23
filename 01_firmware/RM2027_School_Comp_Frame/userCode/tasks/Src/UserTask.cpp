@@ -383,6 +383,15 @@ void UserHandle()
             AppendI("serr=", (int)g_spiErr);      // SPI 连续失败计数
             AppendI("icnt=", (int)g_imuReadCount); // 主循环里实际读了多少次
             AppendF2("vbat=", vccBat);           // 电池电压（换算可疑，用万用表对）
+            /* 2026-10-23：四路电调的**转子角度**（0~8191，C620 反馈帧原始值）。
+             * 作用：区分"没收到帧"和"收到帧但电机不转"——
+             *   a_n 一直是 0        → 这个 ID 没有反馈帧（CAN/供电/ID 问题）
+             *   a_n 是 0~8191 的数   → 帧在正常到达（链路通，只是电机没转）
+             * 手转电机轴时 a_n 明显变化 = 最快的"链路通不通"判据。 */
+            AppendI("a1=", (int)(uint16_t)CMFL.feedback.angle);
+            AppendI("a2=", (int)(uint16_t)CMFR.feedback.angle);
+            AppendI("a3=", (int)(uint16_t)CMBL.feedback.angle);
+            AppendI("a4=", (int)(uint16_t)CMBR.feedback.angle);
         } else {
             /* ===== B 行：机构电机(M2006) 详情 + 四个底盘轮子 + 档位 ===== */
             AppendF2("m=",   UserMotor.state.speed);  // M2006 输出轴 rpm（反馈）
