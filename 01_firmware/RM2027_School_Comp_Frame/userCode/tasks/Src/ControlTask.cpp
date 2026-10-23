@@ -16,6 +16,19 @@ static uint8_t rcDataSane(void)
            (fabsf(RemoteControl::rcInfo.left_rol)  <= 1.05f);
 }
 
+/* ===== 2026-10-23：摇杆死区 =====
+ * 实测：中位时通道仍有偏置（q0=39、q3=47 → 0.058 / 0.070），乘上满杆系数后
+ * 会把轮子驱动到 40 rpm 左右，表现为"没有操作，前轮却在快速滚动"。
+ * 所以四个摇杆轴都要过一遍死区：|v| < RC_DEADZONE 直接当 0。
+ * 发射机里也可以做中立点微调，但代码里兜一层更可靠（换遥控器也不会翻车）。 */
+#define RC_DEADZONE 0.10f
+
+static float rcDeadzone(float v)
+{
+    if (v > -RC_DEADZONE && v < RC_DEADZONE) return 0.0f;
+    return v;
+}
+
 /* ===================== 模式选择 =====================
  * CHASSIS_TEST_MODE = 1 → **逐轮验收模式**（2026-10-23 起）：
  *     SC(右三段) + SB(左三段) 组合选轮子，右摇杆上下给转速（±30 rpm 输出轴）。
@@ -97,9 +110,9 @@ void CtrlHandle(){
         // 原因：M3508 输出轴空载只有 482 rpm ≈ 3.85 m/s，4.2 会让 PID 长期顶在 16384 饱和
         //（表现是"推满杆反而发死"）。3.0 m/s 留了余量，底盘稳了再往上加。
         // 第三个参数 60 = 自转满杆 60 rpm（≈306.9 rpm 输出轴），不用改。
-        ChassisSetVelocity(RemoteControl::rcInfo.right_col*3.0,
-                           RemoteControl::rcInfo.right_rol*3.0,
-                           RemoteControl::rcInfo.left_rol*60);
+        ChassisSetVelocity(rcDeadzone(RemoteControl::rcInfo.right_col)*3.0,
+                           rcDeadzone(RemoteControl::rcInfo.right_rol)*3.0,
+                           rcDeadzone(RemoteControl::rcInfo.left_rol)*60);
         UserStop();      /* 2026-10-23：驾驶档位时机构必须断电，否则从中档切上来会保持上次的目标 */
         break;
 
@@ -111,8 +124,7 @@ void CtrlHandle(){
          * ++-- 这种逆解不可能产生的组合（陈旧目标拼在一起）。 */
         ChassisStop();
         {
-            float c = RemoteControl::rcInfo.right_col;
-            if (c > -0.08f && c < 0.08f) c = 0.0f;
+            float c = rcDeadzone(RemoteControl::rcInfo.right_col);
             UserSetSpeed(c * 30.0f);
         }
         break;
