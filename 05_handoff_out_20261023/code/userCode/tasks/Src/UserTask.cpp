@@ -19,13 +19,19 @@ extern Motor CMFL, CMFR, CMBL, CMBR;
  *   最小模式下 USB 正常 → 说明是某个阻塞外设（最可能是 SPI 读 IMU 超时）拖死了 1ms 中断。
  * DBG_UART = 1 → 同一行数据同时从 UART1（PA9=TX，115200）发出去，USB 挂了也能用 CH340 看。
  *   ⚠️ HAL_UART_Transmit 是阻塞的（60 字节≈5ms），塞进 1ms 中断会拖垮 USB 控制传输，默认关。 */
-#define DBG_MINIMAL 1
-/* 1 = IMU 只读一次 chip id 然后彻底不读（体检用）*/
+#define DBG_MINIMAL 1/* 1 = IMU 只读一次 chip id 然后彻底不读（体检用）*/
 #define DBG_IMU_IDONLY 1
 /* IMU 周期读取的分频：1ms 中断里每 IMU_DIV 次读一次
  *   IMU_DIV=100 → 10Hz（T1 测试）；5 → 200Hz（最终目标）；1 → 1kHz（之前会卡死）*/
 #define IMU_DIV 5
 #define DBG_UART    0
+/* 2026-10-23 实测结论：**不能在 1ms 中断里调用 CDC_Transmit_FS**。
+ * 现象：设备能枚举（COM 口在、PnP 正常），但打开永远报
+ *       Cannot configure port / OSError 22 / Win32 错误 87；
+ *       把这一行打印关掉（DBG_USB_PRINT 0）→ 串口立刻能打开。
+ * 修法：中断里只**拼字符串**（便宜），真正的发送放到主循环 UserPollSlow() 里做。
+ * DBG_USB_PRINT = 0 时完全不打 USB，数据仍写 g_dbg[]，可用 tools/read_swd.py 看。 */
+#define DBG_USB_PRINT 1
 
 /* IMU 的 SPI 读超时：原来是 100ms —— 一旦 SPI 卡一下，1ms 中断就被占住 100ms，
  * USB 控制传输彻底没机会响应，表现就是「设备能枚举、但 COM 口打不开(参数错误 87)」。
@@ -272,6 +278,11 @@ void UserInit()
 static volatile uint8_t imuReadReq = 0;
 uint32_t g_imuReadCount = 0;      /* 累计实际读了多少次（可在串口看）*/
 
+/* 拼行缓冲区：攒够一整行再一次性发（中断里拼，主循环发） */
+static char g_line[192];
+static char g_tx[192];
+static volatile uint8_t g_txReady = 0;
+
 void UserPollSlow(void)
 {
     if (imuReadReq) {
@@ -279,10 +290,18 @@ void UserPollSlow(void)
         IMU_Update();
         g_imuReadCount++;
     }
-}
 
-/* ---------- 拼行缓冲区：攒够一整行再一次性发 ---------- */
-static char g_line[192];
+    /* 2026-10-23：USB 打印挪到主循环发（中断里只拼字符串）。
+     * 关中断只为了"拷走 + 清标志"这几微秒，发送本身在开中断状态下做。 */
+    if (g_txReady) {
+        static char local[sizeof(g_tx)];
+        __disable_irq();
+        memcpy(local, g_tx, sizeof(local));
+        g_txReady = 0;
+        __enable_irq();
+        UsbPrintf("%s\r\n", local);
+    }
+}
 
 /* SWD 快照区：8 个 int32，见 UserHandle 里的赋值说明 */
 volatile int32_t g_dbg[16];
@@ -387,7 +406,12 @@ void UserHandle()
             AppendF2("col=",  RemoteControl::rcInfo.right_col);    // -1~1
         }
         page ^= 1;
-        UsbPrintf("%s\r\n", g_line);
+        /* ★ 不许在这里调 UsbPrintf/CDC_Transmit_FS（实测会把 USB 控制传输搞死：
+         * 设备能枚举、COM 口打不开）。这里只把拼好的行交给主循环去发。 */
+        if (DBG_USB_PRINT && !g_txReady) {
+            memcpy(g_tx, g_line, sizeof(g_tx));
+            g_txReady = 1;
+        }
     }
     UserMotor.Handle();
 }
