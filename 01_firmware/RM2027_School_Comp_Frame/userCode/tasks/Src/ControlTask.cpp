@@ -110,9 +110,15 @@ void CtrlHandle(){
         // 原因：M3508 输出轴空载只有 482 rpm ≈ 3.85 m/s，4.2 会让 PID 长期顶在 16384 饱和
         //（表现是"推满杆反而发死"）。3.0 m/s 留了余量，底盘稳了再往上加。
         // 第三个参数 60 = 自转满杆 60 rpm（≈306.9 rpm 输出轴），不用改。
+        /* 2026-10-23 实测标定（三个摇杆轴的方向）：
+         *   右摇杆上推 → 前进       ：+，公式里 fb 正 = 前进，一致
+         *   右摇杆右推 → 车右移     ：**要取负**，因为公式里 lr 正 = 向左
+         *   左摇杆右推 → 顺时针自转 ：**要取负**，因为公式里 ω 正 = 俯视逆时针
+         * 实测依据：右推时四个轮子呈"左前后、右前前"的组合，按运动学那正是"向左平移"；
+         *           左摇杆右推时左侧后、右侧前，那是"逆时针"。两个都反了，所以这两项加负号。 */
         ChassisSetVelocity(rcDeadzone(RemoteControl::rcInfo.right_col)*3.0,
-                           rcDeadzone(RemoteControl::rcInfo.right_rol)*3.0,
-                           rcDeadzone(RemoteControl::rcInfo.left_rol)*60);
+                           -rcDeadzone(RemoteControl::rcInfo.right_rol)*3.0,
+                           -rcDeadzone(RemoteControl::rcInfo.left_rol)*60);
         UserStop();      /* 2026-10-23：驾驶档位时机构必须断电，否则从中档切上来会保持上次的目标 */
         break;
 
