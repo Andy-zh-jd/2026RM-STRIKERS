@@ -10,17 +10,19 @@
 #define CHASSIS_IQ_MAX   12000
 
 PID_Regulator_t pidRegulator = {//此为储存pid参数的结构体，四个底盘电机共用
-        .kp = 60,
-        /* 2026-10-23：加积分消静差。
-         * 实测（左后轮、空载、目标 29 rpm）：只有 P 时 r3 只到 8.3~16.6，静差 45~70%。
-         * M2006 上同样的改法已验证：ki=0.5 + componentKiMax=6000 → 静差 30% 降到 0.9%。
-         * 注意两点（框架特性）：
-         *   1) errSum 不乘 dt，所以 ki 量级是 0.1~1.0（不是 10）
-         *   2) ki 必须和 componentKiMax 一起改，否则 INRANGE 会把积分压成 0 */
-        .ki = 0.5f,
+        /* 2026-10-23 晚第二轮（在空载左后轮上实测迭代）：
+         * 第一轮 kp=60/ki=0/kiMax=0   → t3=29 时 r3 只到 8~17（静差大），t3=8 时 r3 掉到 0~2
+         * 第二轮 kp=60/ki=0.5/kiMax=6000 → 积分权限 6000(≈7.3A) 太大，空载轮在 0~27 之间乱跳（振荡）
+         * 本轮：加大 kp 让低转速先转起来，把 ki 降到 1/10、积分权限降到 1500(≈1.8A)。
+         *
+         * 为什么 ki 看起来这么小：框架 errSum 不乘 dt，1kHz 下每个误差单位每秒累积 1000 次，
+         * 所以 ki 的量级天生就是 0.0x ~ 0.1（不是仿真里的 10）。
+         * 调参方向：追不上 → 加 kp；稳态差一点 → 加 ki（或加 kiMax）；来回摆 → 减 kp/ki。 */
+        .kp = 120,
+        .ki = 0.05f,
         .kd = 0,
         .componentKpMax = 16384,
-        .componentKiMax = 6000,
+        .componentKiMax = 1500,
         .componentKdMax = 0,
         .outputMax = CHASSIS_IQ_MAX //3508电机输出电流上限，可以调小，勿调大
 };
