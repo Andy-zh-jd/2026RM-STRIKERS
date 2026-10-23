@@ -34,9 +34,9 @@ static uint8_t rcDataSane(void)
 #define CHASSIS_TEST_MODE 1
 
 /* ===== 台架模式：没有可用遥控器时，自动驱动单个轮子验证接线/ID/方向 =====
- * ⚠️ 上电前必须把轮子垫起来（悬空），否则车会突然窜出。
- * 波形：+20 rpm 保持 2 s → -20 rpm 保持 2 s → 循环。 */
-#define DBG_BENCH_WHEEL  1
+ * ⚠️ 2026-10-23 起默认**关闭**：遥控已能正常工作，而且现在四个轮子逐渐装上车，
+ * 无人操作时自动转轮子是危险行为。需要它时再改成 1（轮子必须悬空）。 */
+#define DBG_BENCH_WHEEL  0
 #define BENCH_WHEEL_IDX  2      /* 台架默认测左后轮 = 2 */
 
 #if CHASSIS_TEST_MODE

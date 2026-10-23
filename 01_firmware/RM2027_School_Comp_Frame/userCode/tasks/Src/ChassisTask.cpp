@@ -37,10 +37,10 @@ MOTOR_INIT_t chassisMotorInit = {//四个底盘电机共用的初始化结构体
         .reductionRatio = 19.2032f,
         .ctrlType = SPEED_Single,
 };
-Motor CMFL(MOTOR_ID_1,&chassisMotorInit);//定义左前轮电机
-Motor CMFR(MOTOR_ID_2,&chassisMotorInit);//定义右前轮电机
-Motor CMBL(MOTOR_ID_3,&chassisMotorInit);//定义左后轮电机
-Motor CMBR(MOTOR_ID_4,&chassisMotorInit);//定义右后轮电机
+Motor CMFL(ID_WHEEL_FL,&chassisMotorInit);//定义左前轮电机（电调 ID 见表：ChassisTask.h）
+Motor CMFR(ID_WHEEL_FR,&chassisMotorInit);//定义右前轮电机
+Motor CMBL(ID_WHEEL_BL,&chassisMotorInit);//定义左后轮电机
+Motor CMBR(ID_WHEEL_BR,&chassisMotorInit);//定义右后轮电机
 
 uint8_t ChassisStopFlag = 1;
 float FBVelocity,LRVelocity,RTVelocity;
