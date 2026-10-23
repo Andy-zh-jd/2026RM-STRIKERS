@@ -284,7 +284,7 @@ void UserPollSlow(void)
 static char g_line[128];
 
 /* SWD 快照区：8 个 int32，见 UserHandle 里的赋值说明 */
-volatile int32_t g_dbg[8];
+volatile int32_t g_dbg[16];
 
 /* 调试打印看哪个电机：
  *   M2006 + C610  → UserMotor（ID5，0x1FF 帧，反馈 0x205，减速比 36）
@@ -343,6 +343,12 @@ void UserHandle()
         g_dbg[5] = (int32_t)RemoteControl::rcInfo.sLeft;
         g_dbg[6] = (int32_t)RemoteControl::rcInfo.sRight;
         g_dbg[7] = (int32_t)(RemoteControl::rcInfo.right_col * 100.0f);
+        g_dbg[8]  = (int32_t)(CMFL.state.speed * 100.0f);   // 底盘四轮（ID1~4）
+        g_dbg[9]  = (int32_t)(CMFR.state.speed * 100.0f);
+        g_dbg[10] = (int32_t)(CMBL.state.speed * 100.0f);
+        g_dbg[11] = (int32_t)(CMBR.state.speed * 100.0f);
+        g_dbg[12] = (int32_t)CMFL.stopFlag;                  // 底盘安全态
+        g_dbg[13] = (int32_t)(CMFL.targetSpeed * 100.0f);   // 底盘目标转速（逆解结果）
 
         if (page == 0) {
             /* ===== A 行：姿态 + 电池电压 ===== */
