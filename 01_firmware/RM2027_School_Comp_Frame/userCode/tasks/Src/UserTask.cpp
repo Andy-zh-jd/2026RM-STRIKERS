@@ -12,6 +12,8 @@ extern volatile uint8_t key_raw_state;
 extern volatile float vccBat;
 // 2026-10-20：底盘四个电机对象定义在 ChassisTask.cpp，这里只是引用（CMFL = ID1 左前轮）
 extern Motor CMFL, CMFR, CMBL, CMBR;
+/* 2026-10-23 诊断计数（定义在 Motor.cpp 的 CAN 接收中断里） */
+extern volatile uint32_t g_rx203, g_rxOther;
 
 /* ===== 调试开关 =====
  * DBG_MINIMAL = 1 → 只打印，不读 IMU（跳过 SPI）、不碰机构。
@@ -369,6 +371,13 @@ void UserHandle()
         g_dbg[11] = (int32_t)(CMBR.state.speed * 100.0f);
         g_dbg[12] = (int32_t)CMFL.stopFlag;                  // 底盘安全态
         g_dbg[13] = (int32_t)(CMFL.targetSpeed * 100.0f);   // 底盘目标转速（逆解结果）
+        /* 2026-10-23 诊断：原始 CAN 收帧计数（用 tools/read_swd.py 读 g_dbg 的 14/15 槽）
+         *   [14] = 收到多少 0x203 帧（ID3 电调的反馈）
+         *   [15] = 收到多少其它 ID 的帧
+         * 判据：[14] 一直为 0 → 那个电调压根没发帧（硬件问题）；
+         *        [14] 在涨而 a2 为 0 → 是代码问题。 */
+        g_dbg[14] = (int32_t)g_rx203;
+        g_dbg[15] = (int32_t)g_rxOther;
 
         if (page == 0) {
             /* ===== A 行：姿态 + 电池电压 ===== */

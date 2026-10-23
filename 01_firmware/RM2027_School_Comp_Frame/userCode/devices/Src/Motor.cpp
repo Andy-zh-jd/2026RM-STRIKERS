@@ -5,6 +5,9 @@
 #include "Motor.h"
 
 Motor* Motor::motorPtrs[2][8] = {0};
+/* 2026-10-23 诊断：原始收帧计数（只给 SWD 读，不参与控制） */
+volatile uint32_t g_rx203 = 0;      /* 收到多少 0x203 帧（ID3 电调）*/
+volatile uint32_t g_rxOther = 0;    /* 收到多少其它 ID 的帧 */
 int16_t Motor::motor_intensity[16];
 uint32_t Motor::motor_IDs;
 
@@ -183,8 +186,7 @@ void Motor::Handle(){
  * @brief 电机的中断处理函数，用于电调返回数据的接受
  * @param hcan
  */
-void Motor::IT_Handle(CAN_HandleTypeDef *hcan) {
-    uint8_t canBuf[8];
+void Motor::IT_Handle(CAN_HandleTypeDef *hcan) {    uint8_t canBuf[8];
     CAN_RxHeaderTypeDef rx_header;
     HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, canBuf);
     uint8_t canPos,motorPos;
@@ -193,7 +195,15 @@ void Motor::IT_Handle(CAN_HandleTypeDef *hcan) {
     }else {
         canPos = 1;
     }
+    /* 2026-10-23 诊断用：原始收帧计数（不参与控制，只给 SWD 读）
+     * g_rx203 = 收到过多少 0x203 帧（= ID3 电调的反馈）
+     * g_rxOther = 收到过多少其它 ID 的帧 */
+    if (rx_header.StdId == 0x203u) g_rx203++;
+    else g_rxOther++;
+
     motorPos = rx_header.StdId - 0x201;
+    if (rx_header.StdId < 0x201u || rx_header.StdId > 0x208u) return;
+    if (motorPtrs[canPos][motorPos] == nullptr) return;
     motorPtrs[canPos][motorPos]->feedback.angle = (canBuf[0]<<8u)|canBuf[1];
     motorPtrs[canPos][motorPos]->feedback.speed = (canBuf[2]<<8u)|canBuf[3];
     motorPtrs[canPos][motorPos]->feedback.moment = (canBuf[4]<<8u)|canBuf[5];
