@@ -405,6 +405,13 @@ void UserHandle()
             AppendI("sL=",    (int)RemoteControl::rcInfo.sLeft);   // 97上/0中/158下
             AppendI("sR=",    (int)RemoteControl::rcInfo.sRight);
             AppendF2("col=",  RemoteControl::rcInfo.right_col);    // -1~1
+            /* 2026-10-23：四通道原始值（已减 1024，范围 ±660），用来查清"哪个摇杆对应哪个通道"。
+             * 推杆时看哪个 q 在动，就能把映射定下来（代码里 ch0=right_rol ch1=left_col
+             * ch2=right_col ch3=left_rol，实测和发射机设置不一致）。 */
+            AppendI("q0=", (int)RemoteControl::rc_ctrl.rc.ch[0]);
+            AppendI("q1=", (int)RemoteControl::rc_ctrl.rc.ch[1]);
+            AppendI("q2=", (int)RemoteControl::rc_ctrl.rc.ch[2]);
+            AppendI("q3=", (int)RemoteControl::rc_ctrl.rc.ch[3]);
         }
         page ^= 1;
         /* ★ 不许在这里调 UsbPrintf/CDC_Transmit_FS（实测会把 USB 控制传输搞死：

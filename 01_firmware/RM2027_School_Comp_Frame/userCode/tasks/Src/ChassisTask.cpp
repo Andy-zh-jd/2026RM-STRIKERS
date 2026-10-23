@@ -11,10 +11,16 @@
 
 PID_Regulator_t pidRegulator = {//此为储存pid参数的结构体，四个底盘电机共用
         .kp = 60,
-        .ki = 0,
+        /* 2026-10-23：加积分消静差。
+         * 实测（左后轮、空载、目标 29 rpm）：只有 P 时 r3 只到 8.3~16.6，静差 45~70%。
+         * M2006 上同样的改法已验证：ki=0.5 + componentKiMax=6000 → 静差 30% 降到 0.9%。
+         * 注意两点（框架特性）：
+         *   1) errSum 不乘 dt，所以 ki 量级是 0.1~1.0（不是 10）
+         *   2) ki 必须和 componentKiMax 一起改，否则 INRANGE 会把积分压成 0 */
+        .ki = 0.5f,
         .kd = 0,
         .componentKpMax = 16384,
-        .componentKiMax = 0,
+        .componentKiMax = 6000,
         .componentKdMax = 0,
         .outputMax = CHASSIS_IQ_MAX //3508电机输出电流上限，可以调小，勿调大
 };

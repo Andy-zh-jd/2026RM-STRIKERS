@@ -23,6 +23,12 @@ static uint8_t rcDataSane(void)
 #define DBG_BENCH_WHEEL  1
 #define BENCH_WHEEL_IDX  2      /* 现在接的是左后轮 = 2 */
 
+/* 2026-10-23：单轮测试先固定用一个轮子，别听摇杆的。
+ * 实测发现：推右摇杆时 left_rol 也在动（`wi` 从 2 变成 0），于是目标跑到了
+ * ID1（没接电机）上，看着像"电机不转"。先把下标钉死，把"轮子能不能转"验掉；
+ * 通道映射查清后再放开摇杆选择。改这里试别的轮子：0左前 1右前 2左后 3右后。 */
+#define TEST_WHEEL_FIXED 2
+
 void CtrlHandle(){
     /* ===== 2026-10-21 安全修复 =====
      * 没有接收机时 rcInfo 是零初始化 → sLeft 默认 0 = MID_POS → 会误判"用户选了中档"
@@ -78,11 +84,16 @@ void CtrlHandle(){
             {
                 float c2 = RemoteControl::rcInfo.right_col;
                 if (c2 > -0.08f && c2 < 0.08f) c2 = 0.0f;
+#if TEST_WHEEL_FIXED >= 0
+                ChassisSetWheelSpeed((uint8_t)TEST_WHEEL_FIXED, c2 * 30.0f);
+#else
                 float sel = RemoteControl::rcInfo.left_rol;                 // -1(左) .. +1(右)
                 int idx = (int)((sel + 1.0f) * 0.5f * 3.999f);              // 0..3
                 if (idx < 0) idx = 0;
                 if (idx > 3) idx = 3;
                 ChassisSetWheelSpeed((uint8_t)idx, c2 * 30.0f);
+#endif
+                UserStop();      /* 单轮测试时机构保持断电（避免 M2006 莫名解锁）*/
             }
             break;
         default:
