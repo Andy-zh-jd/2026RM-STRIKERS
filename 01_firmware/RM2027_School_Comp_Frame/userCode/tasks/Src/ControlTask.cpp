@@ -38,8 +38,16 @@ void CtrlHandle(){
                 UserSetSpeed(c * 30.0f);
             }
             break;
-        case DOWN_POS: //左侧三档
-
+        case DOWN_POS: //左侧三档（SB 下档）：单轮方向校验（调试用，2026-10-23 加）
+            /* M3 用：右摇杆推 → 只有 idx 指定的那一个轮子转，其余三轮目标清零。
+             * 逐轮改下面这个数字验证方向：0=左前(CMFL) 1=右前(CMFR) 2=左后(CMBL) 3=右后(CMBR)
+             * 判据：给正目标时，这个轮子应该朝"车往前开"的方向转。
+             * 四轮都验证完 → 把本 case 清空，用 UP_POS 正常跑。 */
+            {
+                float c2 = RemoteControl::rcInfo.right_col;
+                if (c2 > -0.08f && c2 < 0.08f) c2 = 0.0f;
+                ChassisSetWheelSpeed(0, c2 * 30.0f);
+            }
             break;
         default:
             break;

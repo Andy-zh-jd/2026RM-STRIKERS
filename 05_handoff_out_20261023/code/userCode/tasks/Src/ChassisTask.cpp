@@ -3,6 +3,12 @@
 //
 #include "ChassisTask.h"
 
+/* 2026-10-23：底盘电流指令上限。
+ * 满量程 16384 = 20 A/电机，四轮就是 80 A —— 电池架持续上限只有 35 A。
+ * 起步阶段先压到 12000（≈14.6 A/电机）；上台阶确实不够时再临时放到 16384，
+ * 并记住：**功率问题优先修供电/操作（助跑），不是把电流调大。** */
+#define CHASSIS_IQ_MAX   12000
+
 PID_Regulator_t pidRegulator = {//此为储存pid参数的结构体，四个底盘电机共用
         .kp = 60,
         .ki = 0,
@@ -10,7 +16,7 @@ PID_Regulator_t pidRegulator = {//此为储存pid参数的结构体，四个底�
         .componentKpMax = 16384,
         .componentKiMax = 0,
         .componentKdMax = 0,
-        .outputMax = 16384 //3508电机输出电流上限，可以调小，勿调大
+        .outputMax = CHASSIS_IQ_MAX //3508电机输出电流上限，可以调小，勿调大
 };
 
 MOTOR_INIT_t chassisMotorInit = {//四个底盘电机共用的初始化结构体
@@ -30,6 +36,12 @@ Motor CMBR(MOTOR_ID_4,&chassisMotorInit);//定义右后轮电机
 uint8_t ChassisStopFlag = 1;
 float FBVelocity,LRVelocity,RTVelocity;
 
+/* 四个轮子的目标转速（输出轴 rpm），WheelsSpeedCalc 写、打印读 */
+float wheelTargetRpm[4] = {0};
+
+/* 2026-10-23：单轮调试模式标志。1 = 绕过逆解，直接按 wheelTargetRpm 驱动四轮 */
+static uint8_t manualWheelMode = 0;
+
 void ChassisStart(){
 
 }
@@ -38,7 +50,13 @@ void ChassisStart(){
  * @callergraph void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) in Device.cpp
  */
 void ChassisHandle() {
-    if(ChassisStopFlag == 0) {
+    if (manualWheelMode) {
+        /* 单轮调试：四个轮子的目标已经在 ChassisSetWheelSpeed 里摆好，直接下发 */
+        CMFL.SetTargetSpeed(wheelTargetRpm[0]);
+        CMFR.SetTargetSpeed(wheelTargetRpm[1]);
+        CMBL.SetTargetSpeed(wheelTargetRpm[2]);
+        CMBR.SetTargetSpeed(wheelTargetRpm[3]);
+    } else if(ChassisStopFlag == 0) {
         WheelsSpeedCalc(FBVelocity, LRVelocity, RTVelocity);
     }
     CMFL.Handle();
@@ -53,16 +71,32 @@ void ChassisHandle() {
  * @param _rtV 底盘旋转速度
  */
 void ChassisSetVelocity(float _fbV,float _lrV,float _rtV){
+    manualWheelMode = 0;          // 退出单轮调试
     ChassisStopFlag = 0;
     FBVelocity = _fbV;
     LRVelocity = _lrV;
     RTVelocity = _rtV;
 }
+
+/* 2026-10-23：单轮调试（M3 方向校验用）。
+ * 用法：SB 拨到下档（sL=158），右摇杆推 → 只有 idx 指定的那个轮子转。
+ * 逐轮测：改 ControlTask.cpp 里传进来的 idx（0/1/2/3），确认每个轮子的
+ * "正目标 = 车往前时的那个轮子转向"。
+ * 注意：本函数会清另外三个轮子的目标，所以是"绝对安全"的单轮模式。 */
+void ChassisSetWheelSpeed(uint8_t idx, float rpm){
+    manualWheelMode = 1;
+    ChassisStopFlag = 1;          // 逆解不再覆盖
+    for (uint8_t i = 0; i < 4; ++i) wheelTargetRpm[i] = 0;
+    if (idx < 4) wheelTargetRpm[idx] = rpm;
+}
+
 /**
  * @brief 执行急停模式的底盘任务处理
  */
 void ChassisStop(){
+    manualWheelMode = 0;
     ChassisStopFlag = 1;
+    for (uint8_t i = 0; i < 4; ++i) wheelTargetRpm[i] = 0;
     CMFL.Stop();
     CMFR.Stop();
     CMBL.Stop();
@@ -99,14 +133,14 @@ void WheelsSpeedCalc(float fbVelocity, float lrVelocity, float rtVelocity) {
     CMBLSpeed = fbVelocity + lrVelocity - k * rtVelocity;  // 左后
     CMBRSpeed = fbVelocity - lrVelocity + k * rtVelocity;  // 右后
 
-    //计算四个轮子角速度，单位：rad/s
-    CMFLSpeed = CMFLSpeed /(WHEEL_DIAMETER/2.0f);
-    CMFRSpeed = CMFRSpeed /(WHEEL_DIAMETER/2.0f);
-    CMBLSpeed = CMBLSpeed /(WHEEL_DIAMETER/2.0f);
-    CMBRSpeed = CMBRSpeed /(WHEEL_DIAMETER/2.0f);
+    //计算四个轮子角速度，单位：rad/s；再换算成输出轴 RPM（打印要用）
+    wheelTargetRpm[0] = RADpS2RPM(CMFLSpeed / (WHEEL_DIAMETER/2.0f));
+    wheelTargetRpm[1] = RADpS2RPM(CMFRSpeed / (WHEEL_DIAMETER/2.0f));
+    wheelTargetRpm[2] = RADpS2RPM(CMBLSpeed / (WHEEL_DIAMETER/2.0f));
+    wheelTargetRpm[3] = RADpS2RPM(CMBRSpeed / (WHEEL_DIAMETER/2.0f));
     //控制底盘电机转速
-    CMFL.SetTargetSpeed(RADpS2RPM(CMFLSpeed));
-    CMFR.SetTargetSpeed(RADpS2RPM(CMFRSpeed));
-    CMBL.SetTargetSpeed(RADpS2RPM(CMBLSpeed));
-    CMBR.SetTargetSpeed(RADpS2RPM(CMBRSpeed));
+    CMFL.SetTargetSpeed(wheelTargetRpm[0]);
+    CMFR.SetTargetSpeed(wheelTargetRpm[1]);
+    CMBL.SetTargetSpeed(wheelTargetRpm[2]);
+    CMBR.SetTargetSpeed(wheelTargetRpm[3]);
 }

@@ -49,9 +49,19 @@ extern CHASSIS_CONTROL_T   chassisControl;
 
 extern float FBVelocity,LRVelocity,RTVelocity;
 
+/* 2026-10-23：四个轮子的**目标**转速（输出轴 rpm），供串口打印/调试用。
+ * 下标：0=左前(CMFL,ID1) 1=右前(CMFR,ID2) 2=左后(CMBL,ID3) 3=右后(CMBR,ID4) */
+extern float wheelTargetRpm[4];
+
 /*外部函数声明-------------------------------------------------------------*/
 
 void WheelsSpeedCalc(float fbVelocity, float lrVelocity, float rtVelocity);
 void ChassisStop();
 void ChassisSetVelocity(float _fbV,float _lrV,float _rtV);
+
+/* 2026-10-23：单轮调试入口（M3 方向校验用）
+ * 只给指定的一个轮子下目标转速，其余三轮目标清零；绕过麦轮逆解。
+ * idx: 0=左前 1=右前 2=左后 3=右后；rpm 为输出轴转速（正负=方向）
+ * 退出方式：调 ChassisStop() 或 ChassisSetVelocity() */
+void ChassisSetWheelSpeed(uint8_t idx, float rpm);
 #endif //RM_FRAME_C_CHASSISTASK_H

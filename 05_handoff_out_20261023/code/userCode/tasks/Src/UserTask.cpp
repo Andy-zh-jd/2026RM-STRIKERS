@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include "RemoteControl.h"          // rcInfo（遥控器）
+#include "ChassisTask.h"            // 2026-10-23：wheelTargetRpm/底盘接口（打印四轮目标用）
 extern volatile uint8_t key_raw_state;
 // 2026-10-17：vccBat 没写在任何头文件里，要自己 extern（Device.cpp:117）
 // 用途：接电池后先看这个数对不对（换算系数 /22*222 疑似笔误，要用万用表核对）
@@ -281,7 +282,7 @@ void UserPollSlow(void)
 }
 
 /* ---------- 拼行缓冲区：攒够一整行再一次性发 ---------- */
-static char g_line[128];
+static char g_line[192];
 
 /* SWD 快照区：8 个 int32，见 UserHandle 里的赋值说明 */
 volatile int32_t g_dbg[16];
@@ -373,6 +374,14 @@ void UserHandle()
             AppendF2("r2=",  CMFR.state.speed);
             AppendF2("r3=",  CMBL.state.speed);
             AppendF2("r4=",  CMBR.state.speed);
+            /* 2026-10-23：四个轮子的**目标**（逆解结果/单轮调试值）。
+             * 有了 t1~t4 才能区分"指令没下发"和"电机没转"：
+             *   t 有数、r=0      → CAN 没通 / 电调没供电 / ID 错
+             *   t=0、推摇杆没反应 → 档位或逆解没跑（看 sL/sR） */
+            AppendF2("t1=",  wheelTargetRpm[0]);
+            AppendF2("t2=",  wheelTargetRpm[1]);
+            AppendF2("t3=",  wheelTargetRpm[2]);
+            AppendF2("t4=",  wheelTargetRpm[3]);
             AppendI("sL=",    (int)RemoteControl::rcInfo.sLeft);   // 97上/0中/158下
             AppendI("sR=",    (int)RemoteControl::rcInfo.sRight);
             AppendF2("col=",  RemoteControl::rcInfo.right_col);    // -1~1

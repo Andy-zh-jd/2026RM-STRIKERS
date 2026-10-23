@@ -9,10 +9,14 @@
 | 项 | 状态 |
 |---|---|
 | 水平 | **2.5 级 / 6 级**：M0 闭环 ✅、M1 遥控 ✅、M2 单电机 ✅；四轮落地走、抓取、上台阶都没做 |
-| 固件 | GCC 链 **46 848 B**（-O2）；Keil 链 39 112 B 但卡在 Community 32 KB 上限 |
+| 固件 | GCC 链 **47 092 B**（-O2）；Keil 链 39 112 B 但卡在 Community 32 KB 上限 |
 | 板上状态 | **`DBG_MINIMAL 1`**：不读 IMU（会拖死 USB），CAN/电机/遥控/打印全部正常 |
 | 最大卡点 | IMU 的 SPI 读在 1 ms 中断里死等 → USB 打不开；SysTick 优先级已提到 0 仍未根治 |
 | 下一步 | ①4 轮接上走起来（M3）②15 cm 冲坡实测 ③夹爪 ④检录预演 |
+
+> 2026-10-23 补：`code/` 是**完整可编译工程**（含 Drivers/Middlewares），已实测在干净目录
+> `cmake -G Ninja -B build && cmake --build build` 能产出与本包 `firmware/` 一模一样的 bin；
+> 新增**单轮调试入口 + 四轮目标值打印 + 底盘限流 12 A**，专为 M3（四轮方向校验）准备。
 
 ## 先读哪个
 
@@ -45,8 +49,9 @@
 
 ## ⚠️ 接手注意三件事
 
-1. **完整可编译工程不在本包里**（Drivers/Middlewares 太大没放）。完整工程在
-   `F:\Program Files\交龙校内赛\01_firmware\RM2027_School_Comp_Frame`（含 `build/`，GCC 一键编译）。
+1. **`code/` 就是完整工程**（含 Drivers/Middlewares/startup），可以直接
+   `cmake -G Ninja -B build && cmake --build build`；工作区里的原始副本在
+   `F:\Program Files\交龙校内赛\01_firmware\RM2027_School_Comp_Frame`（含 `build/`）。
    Keil 那侧有个中文路径联接：`D:\RM2027_Frame` → 真实工程目录。
 2. **别改 `Src/` 下的 CubeMX 生成文件**（can.c/tim.c/usart.c/usb*）。要改就改 `userCode/`。
 3. **烧录前先关串口窗口**：`pyocd flash` 会复位板子 → USB 重新枚举 → 读串口的进程会报
