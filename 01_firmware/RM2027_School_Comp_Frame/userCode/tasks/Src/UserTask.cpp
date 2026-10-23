@@ -407,10 +407,12 @@ void UserHandle()
             AppendF2("tgt=", UserMotor.targetSpeed);  // M2006 目标 rpm
             AppendI("cur=",  (int)UserMotor.state.moment);
             AppendI("st=",   (int)UserMotor.stopFlag);
-            AppendF2("r1=",  CMFL.state.speed);       // 底盘四轮（ID1~4）
-            AppendF2("r2=",  CMFR.state.speed);
-            AppendF2("r3=",  CMBL.state.speed);
-            AppendF2("r4=",  CMBR.state.speed);
+            /* 2026-10-23：回读也乘方向补偿，和 t 在同一个（车体）坐标系里，
+             * 这样"t 与 r 同号"才等价于"轮子朝期望方向转"。右侧两个轮子是镜像安装的。 */
+            AppendF2("r1=",  CMFL.state.speed * SIGN_WHEEL_FL);
+            AppendF2("r2=",  CMFR.state.speed * SIGN_WHEEL_FR);
+            AppendF2("r3=",  CMBL.state.speed * SIGN_WHEEL_BL);
+            AppendF2("r4=",  CMBR.state.speed * SIGN_WHEEL_BR);
             /* 2026-10-23：四个轮子的**目标**（逆解结果/单轮调试值）。
              * 有了 t1~t4 才能区分"指令没下发"和"电机没转"：
              *   t 有数、r=0      → CAN 没通 / 电调没供电 / ID 错

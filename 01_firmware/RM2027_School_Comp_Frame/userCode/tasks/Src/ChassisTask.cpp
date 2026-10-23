@@ -64,10 +64,10 @@ void ChassisStart(){
 void ChassisHandle() {
     if (manualWheelMode) {
         /* 单轮调试：四个轮子的目标已经在 ChassisSetWheelSpeed 里摆好，直接下发 */
-        CMFL.SetTargetSpeed(wheelTargetRpm[0]);
-        CMFR.SetTargetSpeed(wheelTargetRpm[1]);
-        CMBL.SetTargetSpeed(wheelTargetRpm[2]);
-        CMBR.SetTargetSpeed(wheelTargetRpm[3]);
+        CMFL.SetTargetSpeed(wheelTargetRpm[0] * SIGN_WHEEL_FL);
+        CMFR.SetTargetSpeed(wheelTargetRpm[1] * SIGN_WHEEL_FR);
+        CMBL.SetTargetSpeed(wheelTargetRpm[2] * SIGN_WHEEL_BL);
+        CMBR.SetTargetSpeed(wheelTargetRpm[3] * SIGN_WHEEL_BR);
     } else if(ChassisStopFlag == 0) {
         WheelsSpeedCalc(FBVelocity, LRVelocity, RTVelocity);
     }
@@ -150,9 +150,9 @@ void WheelsSpeedCalc(float fbVelocity, float lrVelocity, float rtVelocity) {
     wheelTargetRpm[1] = RADpS2RPM(CMFRSpeed / (WHEEL_DIAMETER/2.0f));
     wheelTargetRpm[2] = RADpS2RPM(CMBLSpeed / (WHEEL_DIAMETER/2.0f));
     wheelTargetRpm[3] = RADpS2RPM(CMBRSpeed / (WHEEL_DIAMETER/2.0f));
-    //控制底盘电机转速
-    CMFL.SetTargetSpeed(wheelTargetRpm[0]);
-    CMFR.SetTargetSpeed(wheelTargetRpm[1]);
-    CMBL.SetTargetSpeed(wheelTargetRpm[2]);
-    CMBR.SetTargetSpeed(wheelTargetRpm[3]);
+    //控制底盘电机转速（乘方向补偿：+1 = 车前进方向）
+    CMFL.SetTargetSpeed(wheelTargetRpm[0] * SIGN_WHEEL_FL);
+    CMFR.SetTargetSpeed(wheelTargetRpm[1] * SIGN_WHEEL_FR);
+    CMBL.SetTargetSpeed(wheelTargetRpm[2] * SIGN_WHEEL_BL);
+    CMBR.SetTargetSpeed(wheelTargetRpm[3] * SIGN_WHEEL_BR);
 }

@@ -31,7 +31,7 @@ static uint8_t rcDataSane(void)
  *
  * CHASSIS_TEST_MODE = 0 → 正常驾驶模式：SB 上档 = 底盘听摇杆，中档 = M2006。
  * 四轮验收完、底盘装好之后，把这里改成 0。 */
-#define CHASSIS_TEST_MODE 1
+#define CHASSIS_TEST_MODE 0   /* 2026-10-23：四轮方向已验收完，切回正常驾驶模式 */
 
 /* ===== 台架模式：没有可用遥控器时，自动驱动单个轮子验证接线/ID/方向 =====
  * ⚠️ 2026-10-23 起默认**关闭**：遥控已能正常工作，而且现在四个轮子逐渐装上车，
@@ -100,6 +100,7 @@ void CtrlHandle(){
         ChassisSetVelocity(RemoteControl::rcInfo.right_col*3.0,
                            RemoteControl::rcInfo.right_rol*3.0,
                            RemoteControl::rcInfo.left_rol*60);
+        UserStop();      /* 2026-10-23：驾驶档位时机构必须断电，否则从中档切上来会保持上次的目标 */
         break;
 
     case MID_POS: //左侧二档：用右摇杆控制 M2006（机构电机）
@@ -111,7 +112,8 @@ void CtrlHandle(){
         }
         break;
 
-    case DOWN_POS: //左侧三档：目前留空
+    case DOWN_POS: //左侧三档：目前留空（机构断电）
+        UserStop();
         break;
 
     default:
