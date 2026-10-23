@@ -105,6 +105,11 @@ void CtrlHandle(){
 
     case MID_POS: //左侧二档：用右摇杆控制 M2006（机构电机）
         // 台架验证用。满杆 = ±30 rpm（输出轴，36:1 减速后很慢，安全）。
+        /* ⚠️ 2026-10-23 修 bug：这里必须停底盘。
+         * 否则 manualWheelMode 会一直保持 1，ChassisHandle 继续按"上次单轮调试的目标"
+         * 驱动轮子 → 现象是"没有任何操作，前轮却在快速滚动"，而且 t1..t4 出现
+         * ++-- 这种逆解不可能产生的组合（陈旧目标拼在一起）。 */
+        ChassisStop();
         {
             float c = RemoteControl::rcInfo.right_col;
             if (c > -0.08f && c < 0.08f) c = 0.0f;
@@ -112,11 +117,14 @@ void CtrlHandle(){
         }
         break;
 
-    case DOWN_POS: //左侧三档：目前留空（机构断电）
+    case DOWN_POS: //左侧三档：底盘与机构都断电
+        ChassisStop();
         UserStop();
         break;
 
     default:
+        ChassisStop();
+        UserStop();
         break;
     }
 #endif
