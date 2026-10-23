@@ -47,6 +47,21 @@
       "problemMatcher": []
     },
     {
+      "label": "看串口 watch（自动找口，推荐）",
+      "type": "shell",
+      "command": "python \"${workspaceFolder}/../../tools/read_serial.py\"",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "detail": "自动找 STM32 串口并一直打印；Ctrl+C 退出。烧录前必须先停掉它。"
+    },
+    {
+      "label": "看串口 4 秒快照",
+      "type": "shell",
+      "command": "python \"${workspaceFolder}/../../tools/read_serial.py\" -t 4",
+      "problemMatcher": [],
+      "detail": "读 4 秒自动退出，适合烧完快速确认"
+    },
+    {
       "label": "ports 查串口",
       "type": "shell",
       "command": "python -c \"import serial.tools.list_ports as p;[print(x.device, x.description) for x in p.comports()]\"",
