@@ -53,6 +53,9 @@ extern float FBVelocity,LRVelocity,RTVelocity;
  * 下标：0=左前(CMFL,ID1) 1=右前(CMFR,ID2) 2=左后(CMBL,ID3) 3=右后(CMBR,ID4) */
 extern float wheelTargetRpm[4];
 
+/* 单轮调试时当前选中的轮子下标（0=左前 1=右前 2=左后 3=右后），打印用 */
+extern uint8_t g_selWheel;
+
 /*外部函数声明-------------------------------------------------------------*/
 
 void WheelsSpeedCalc(float fbVelocity, float lrVelocity, float rtVelocity);

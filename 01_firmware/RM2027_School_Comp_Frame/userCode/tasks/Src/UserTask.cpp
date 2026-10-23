@@ -401,6 +401,7 @@ void UserHandle()
             AppendF2("t2=",  wheelTargetRpm[1]);
             AppendF2("t3=",  wheelTargetRpm[2]);
             AppendF2("t4=",  wheelTargetRpm[3]);
+            AppendI("wi=",   (int)g_selWheel);   // 单轮调试选中的下标：0左前 1右前 2左后 3右后
             AppendI("sL=",    (int)RemoteControl::rcInfo.sLeft);   // 97上/0中/158下
             AppendI("sR=",    (int)RemoteControl::rcInfo.sRight);
             AppendF2("col=",  RemoteControl::rcInfo.right_col);    // -1~1

@@ -52,6 +52,19 @@ void RemoteControl::init() {
 
 
 void RemoteControl::sbus_to_rc(const volatile uint8_t *sbus_buf) {
+    /* ===== 2026-10-23 安全修复：拒绝"全 0 帧" =====
+     * 接收机没通电/没对码时，USART3 上会收到 25 个 0x00（长度正好等于 RC_FRAME_LENGTH）。
+     * 这种帧解析出来是：ch 全 0 → col = (0-1024)/671 = -1.52、两个开关 = 0 = 中位。
+     * 结果：RemoteAlive() 判"在线"，CtrlHandle 命中 MID_POS，用 -1.52 算出 -45.7 rpm
+     *      → UserSetSpeed() 把 stopFlag 解开 → **电机在没人操作的情况下被使能**。
+     * 实测就撞到了这个（vbat 25.7、sL=sR=0、col=-1.52、st=0、tgt=-45.73）。
+     * 修法：整帧全 0 直接丢弃，不更新 rc_last_tick（于是 RemoteAlive 判离线，回安全态）。 */
+    {
+        uint8_t any = 0;
+        for (uint8_t i = 0; i < RC_FRAME_LENGTH; ++i) any |= sbus_buf[i];
+        if (any == 0) return;
+    }
+
     rc_ctrl.rc.ch[0] = (sbus_buf[1] | sbus_buf[2] << 8) & 0x07ff;       // Channel 1
     rc_ctrl.rc.ch[1] = (sbus_buf[2] >> 3 | sbus_buf[3] << 5) & 0x07ff;  // Channel 2
     rc_ctrl.rc.ch[2] = (sbus_buf[3] >> 6 | sbus_buf[4] << 2 | sbus_buf[5] << 10) &

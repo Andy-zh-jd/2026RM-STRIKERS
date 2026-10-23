@@ -39,6 +39,9 @@ float FBVelocity,LRVelocity,RTVelocity;
 /* 四个轮子的目标转速（输出轴 rpm），WheelsSpeedCalc 写、打印读 */
 float wheelTargetRpm[4] = {0};
 
+/* 当前单轮调试选中的轮子下标（0=左前 1=右前 2=左后 3=右后），打印用 */
+uint8_t g_selWheel = 0;
+
 /* 2026-10-23：单轮调试模式标志。1 = 绕过逆解，直接按 wheelTargetRpm 驱动四轮 */
 static uint8_t manualWheelMode = 0;
 
@@ -87,7 +90,7 @@ void ChassisSetWheelSpeed(uint8_t idx, float rpm){
     manualWheelMode = 1;
     ChassisStopFlag = 1;          // 逆解不再覆盖
     for (uint8_t i = 0; i < 4; ++i) wheelTargetRpm[i] = 0;
-    if (idx < 4) wheelTargetRpm[idx] = rpm;
+    if (idx < 4) { wheelTargetRpm[idx] = rpm; g_selWheel = idx; }
 }
 
 /**
