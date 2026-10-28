@@ -3,9 +3,14 @@
 //
 #include "UserTask.h"
 #include "RemoteControl.h"
+#include "tim.h"
 #include <stdio.h>
 #include <stdarg.h>
 extern volatile uint8_t key_raw_state;
+
+/* Jack / BTS7960 mode, defined later in this file. */
+static bool ClimbMode(void);
+static bool FrontPairSelected(void);
 
 void UsbPrintf(const char *fmt, ...)
 {
@@ -569,6 +574,7 @@ static void ArmControl(void)
 #endif
     RC_Info_t &rc = RemoteControl::rcInfo;
 
+    if (ClimbMode()) return;                   /* 爬台阶时机械臂不要动 */
     if (rc.sRight == DOWN_POS) return;         /* 急停挡：不动 */
 
     if (rc.sLeft == MID_POS) {                 /* 臂模式 1 */
@@ -629,10 +635,216 @@ static void ArmSelfTest(void)
 
 
 
+/* ========================================================================
+ * BTS7960 jack control (merged with the existing IMU/arm code)
+ *
+ * SA  = optional[0] : climb enable, > 1000 = climb mode
+ * SD  = optional[1] : pair select,  > 1000 = front pair, else rear pair
+ * SC  = sRight      : UP = extend, MID = retract, DOWN = emergency
+ *
+ * Front BTS: PE9/PE11 (TIM1_CH1/CH2)
+ * Rear  BTS: PE13/PE14 (TIM1_CH3/CH4)
+ * Limits: PC6 front, PI6 rear (NC switches in series to GND)
+ *
+ * 24V + 12V actuator temporary solution: 20 kHz, 50% duty.
+ * If a real 24V->12V converter is used later, set JACK_PWM_DUTY_MAX
+ * to JACK_PWM_ARR (100%).
+ * ======================================================================== */
+#define JACK_PWM_ARR          8399U
+#define JACK_PWM_DUTY_MAX     (JACK_PWM_ARR / 2U)
+#define JACK_PWM_RAMP_STEP    20U
+
+/* Set to 1 after the NC limit switches are wired. */
+#define JACK_LIMIT_ENABLED    0
+#define JACK_LIMIT_ACTIVE     GPIO_PIN_SET
+
+typedef enum {
+    JACK_STOP = 0,
+    JACK_OUT,
+    JACK_IN
+} JackCmd;
+
+typedef struct {
+    TIM_HandleTypeDef* htim;
+    uint32_t rCh;
+    uint32_t lCh;
+    GPIO_TypeDef* limPort;
+    uint16_t limPin;
+    uint8_t  lastCmd;
+    uint16_t deadMs;
+    uint16_t duty;
+} JackPair;
+
+static JackPair jackFront = {
+    &htim1, TIM_CHANNEL_1, TIM_CHANNEL_2,
+    GPIOC, GPIO_PIN_6, 0, 0, 0
+};
+
+static JackPair jackRear = {
+    &htim1, TIM_CHANNEL_3, TIM_CHANNEL_4,
+    GPIOI, GPIO_PIN_6, 0, 0, 0
+};
+
+static bool ClimbMode(void)
+{
+    return RemoteControl::rcInfo.optional[0] > 1000;
+}
+
+static bool FrontPairSelected(void)
+{
+    return RemoteControl::rcInfo.optional[1] > 1000;
+}
+
+static void JackPwmPins_Init(void)
+{
+    GPIO_InitTypeDef gpio = {0};
+
+    __HAL_RCC_GPIOE_CLK_ENABLE();
+
+    gpio.Pin = GPIO_PIN_9 | GPIO_PIN_11 | GPIO_PIN_13 | GPIO_PIN_14;
+    gpio.Mode = GPIO_MODE_AF_PP;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+    gpio.Alternate = GPIO_AF1_TIM1;
+    HAL_GPIO_Init(GPIOE, &gpio);
+}
+
+static void JackPwm_Init(void)
+{
+    htim1.Init.Prescaler = 0;
+    htim1.Init.Period = JACK_PWM_ARR;
+    HAL_TIM_PWM_Init(&htim1);
+
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
+
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 0);
+}
+
+static void JackLimit_Init(void)
+{
+    GPIO_InitTypeDef gpio = {0};
+
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOI_CLK_ENABLE();
+
+    gpio.Pin = GPIO_PIN_6;
+    gpio.Mode = GPIO_MODE_INPUT;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_LOW;
+
+    HAL_GPIO_Init(GPIOC, &gpio);
+    HAL_GPIO_Init(GPIOI, &gpio);
+}
+
+static void JackSetDuty(JackPair* p, uint16_t r, uint16_t l)
+{
+    __HAL_TIM_SET_COMPARE(p->htim, p->rCh, r);
+    __HAL_TIM_SET_COMPARE(p->htim, p->lCh, l);
+}
+
+static void JackStop(JackPair* p)
+{
+    p->duty = 0;
+    JackSetDuty(p, 0, 0);
+}
+
+static void JackStopAll(void)
+{
+    JackStop(&jackFront);
+    JackStop(&jackRear);
+}
+
+static uint8_t JackLimitHit(JackPair* p)
+{
+#if JACK_LIMIT_ENABLED
+    return HAL_GPIO_ReadPin(p->limPort, p->limPin) == JACK_LIMIT_ACTIVE;
+#else
+    (void)p;
+    return 0;
+#endif
+}
+
+static void JackOut(JackPair* p)
+{
+    if (p->duty < JACK_PWM_DUTY_MAX) {
+        p->duty += JACK_PWM_RAMP_STEP;
+        if (p->duty > JACK_PWM_DUTY_MAX) p->duty = JACK_PWM_DUTY_MAX;
+    }
+    JackSetDuty(p, p->duty, 0);
+}
+
+static void JackIn(JackPair* p)
+{
+    if (p->duty < JACK_PWM_DUTY_MAX) {
+        p->duty += JACK_PWM_RAMP_STEP;
+        if (p->duty > JACK_PWM_DUTY_MAX) p->duty = JACK_PWM_DUTY_MAX;
+    }
+    JackSetDuty(p, 0, p->duty);
+}
+
+static void JackPairUpdate(JackPair* p, JackCmd cmd)
+{
+    if (cmd != p->lastCmd) {
+        JackStop(p);
+        p->deadMs = 200;
+        p->lastCmd = cmd;
+    }
+
+    if (p->deadMs) {
+        p->deadMs--;
+        return;
+    }
+
+    if (cmd == JACK_OUT && !JackLimitHit(p)) {
+        JackOut(p);
+    } else if (cmd == JACK_IN) {
+        JackIn(p);
+    } else {
+        JackStop(p);
+    }
+}
+
+static JackCmd JackReadCmd(void)
+{
+    if (!ClimbMode()) return JACK_STOP;
+
+    if (RemoteControl::rcInfo.sRight == UP_POS) {
+        return JACK_OUT;
+    } else if (RemoteControl::rcInfo.sRight == MID_POS) {
+        return JACK_IN;
+    }
+    return JACK_STOP;
+}
+
+static void JackUpdate(void)
+{
+    JackCmd cmd = JackReadCmd();
+
+    if (cmd == JACK_STOP) {
+        JackStopAll();
+        return;
+    }
+
+    if (FrontPairSelected()) {
+        JackPairUpdate(&jackFront, cmd);
+        JackStop(&jackRear);
+    } else {
+        JackPairUpdate(&jackRear, cmd);
+        JackStop(&jackFront);
+    }
+}
+
 void UserStop()
 {
     UserMotor.Stop();
     ArmStopAll();              /* 急停：舵机全部卸力 */
+    JackStopAll();             /* 急停：推杆 PWM 清零 */
 }
 
 /***
@@ -672,6 +884,14 @@ void UserInit()
         ArmSelfTest();                          /* 自检：不想动就注释掉 */
     }
     /* pcaOk = 0 说明 I2C 没通 → 后面打印里能看到 pcaMode1 不对 */
+
+    /* ---- BTS7960 jack PWM ----
+     * PIN_Scan() above temporarily reconfigures PE9/11/13/14 and PC6/PI6,
+     * so restore the PWM AF pins and limit inputs after it. */
+    JackPwmPins_Init();
+    JackPwm_Init();
+    JackLimit_Init();
+    JackStopAll();
 }
 
 
@@ -715,6 +935,7 @@ void UserHandle()
     IMU_Update();                    // 1kHz 采样
     ArmControl();                    // ★ 加这一行：机械臂控制 + 限速
     ArmFlushOne();                   // ★ 只写 1 个通道（~430 µs）
+    JackUpdate();                    // BTS7960 推杆，爬台阶模式
 
     if (++cnt >= 100) {
         cnt = 0;
