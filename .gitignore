@@ -9,3 +9,11 @@ _packs/
 mdk_build.log
 *.uvguix.*
 _backup_TOOLS.INI
+
+# 临时/中间产物
+_m/
+_packs/
+_c.sh
+_backup_TOOLS.INI
+_watch.py
+_串口抓包.txt
