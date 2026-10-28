@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by LEGION on 2021/10/4.
 //
 #include "ControlTask.h"
@@ -44,7 +44,7 @@ static float rcDeadzone(float v)
  *
  * CHASSIS_TEST_MODE = 0 → 正常驾驶模式：SB 上档 = 底盘听摇杆，中档 = M2006。
  * 四轮验收完、底盘装好之后，把这里改成 0。 */
-#define CHASSIS_TEST_MODE 0   /* 2026-10-23：四轮方向已验收完，切回正常驾驶模式 */
+#define CHASSIS_TEST_MODE 0   /* 驾驶模式 */
 
 /* ===== 台架模式：没有可用遥控器时，自动驱动单个轮子验证接线/ID/方向 =====
  * ⚠️ 2026-10-23 起默认**关闭**：遥控已能正常工作，而且现在四个轮子逐渐装上车，
@@ -147,3 +147,4 @@ void CtrlHandle(){
     }
 #endif
 }
+

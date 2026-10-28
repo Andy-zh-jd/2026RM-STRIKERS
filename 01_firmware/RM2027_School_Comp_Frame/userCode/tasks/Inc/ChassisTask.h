@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by LEGION on 2021/10/4.
 //
 
@@ -42,15 +42,13 @@
 #define ID_WHEEL_BL   MOTOR_ID_3   /* 左后 = 电调 ID 3 */
 #define ID_WHEEL_BR   MOTOR_ID_2   /* 右后 = 电调 ID 2 */
 
-/* ===================== 电机方向补偿（2026-10-23 实测） =====================
- * 逐轮实测：正目标时
- *   左前 → 车前进方向 ✅   左后 → 车前进方向 ✅
- *   右前 → 车后退方向 ❌   右后 → 车后退方向 ❌
- * 原因：底盘左右两侧电机是镜像安装的，同一"前进"要求两侧转子转向相反。
+/* ===================== 电机方向补偿 =====================
+ * 含义：SIGN_* 乘在"下发目标"和"显示回读"上，使得
+ *       命令为正 ⇔ 轮子顶部朝车头转（= 车会往前走）。
  *
- * 这里统一成「+1 = 车前进方向」，在**下发目标**和**显示回读**两处都乘这个符号，
- * 于是串口里的 t / r 永远在同一个（车体）坐标系里，便于判断"同号"。
- * 以后如果换了电机/改了安装方式，只改这四个数即可。 */
+ * 2026-10-23 重新标定：之前那批数据是在"ID 位掩码 bug"期间测的（wi 驱动的物理轮子
+ * 和标签不对应），已经作废。现在全部先设 +1，用 CHASSIS_TEST_MODE 1 逐轮实测，
+ * 得到"命令为正时轮子顶部朝前还是朝后"，再填回这里。 */
 #define SIGN_WHEEL_FL   (+1.0f)
 #define SIGN_WHEEL_FR   (-1.0f)
 #define SIGN_WHEEL_BL   (+1.0f)
@@ -110,3 +108,4 @@ void ChassisSetVelocity(float _fbV,float _lrV,float _rtV);
  * 退出方式：调 ChassisStop() 或 ChassisSetVelocity() */
 void ChassisSetWheelSpeed(uint8_t idx, float rpm);
 #endif //RM_FRAME_C_CHASSISTASK_H
+
