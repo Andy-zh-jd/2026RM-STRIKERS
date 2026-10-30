@@ -57,7 +57,7 @@ static float rcDeadzone(float v)
  *   0 前进 / 1 右移 / 2 左移 / 3 顺时针 / 4 逆时针
  * 速度都压到轮子输出 ~25-30 rpm（很慢，肉眼能看清），方便判断"车往哪走"。
  * 验证完运动学后改回 0。 */
-#define DBG_SEQ_MODE  1
+#define DBG_SEQ_MODE  0
 
 #if DBG_SEQ_MODE
 /* 返回当前阶段，并给出该阶段的三轴速度 */
@@ -200,6 +200,7 @@ void CtrlHandle(){
     }
 #endif
 }
+
 
 
 
