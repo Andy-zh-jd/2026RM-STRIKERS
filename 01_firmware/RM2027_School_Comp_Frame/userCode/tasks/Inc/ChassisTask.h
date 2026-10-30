@@ -49,9 +49,9 @@
  * 2026-10-23 重新标定：之前那批数据是在"ID 位掩码 bug"期间测的（wi 驱动的物理轮子
  * 和标签不对应），已经作废。现在全部先设 +1，用 CHASSIS_TEST_MODE 1 逐轮实测，
  * 得到"命令为正时轮子顶部朝前还是朝后"，再填回这里。 */
-#define SIGN_WHEEL_FL   (+1.0f)
+#define SIGN_WHEEL_FL   (-1.0f)
 #define SIGN_WHEEL_FR   (-1.0f)
-#define SIGN_WHEEL_BL   (+1.0f)
+#define SIGN_WHEEL_BL   (-1.0f)
 #define SIGN_WHEEL_BR   (-1.0f)
 /*枚举类型定义------------------------------------------------------------*/
 
@@ -108,4 +108,5 @@ void ChassisSetVelocity(float _fbV,float _lrV,float _rtV);
  * 退出方式：调 ChassisStop() 或 ChassisSetVelocity() */
 void ChassisSetWheelSpeed(uint8_t idx, float rpm);
 #endif //RM_FRAME_C_CHASSISTASK_H
+
 

@@ -369,15 +369,14 @@ void UserHandle()
         g_dbg[9]  = (int32_t)(CMFR.state.speed * 100.0f);
         g_dbg[10] = (int32_t)(CMBL.state.speed * 100.0f);
         g_dbg[11] = (int32_t)(CMBR.state.speed * 100.0f);
-        g_dbg[12] = (int32_t)CMFL.stopFlag;                  // 底盘安全态
-        g_dbg[13] = (int32_t)(CMFL.targetSpeed * 100.0f);   // 底盘目标转速（逆解结果）
-        /* 2026-10-23 诊断：原始 CAN 收帧计数（用 tools/read_swd.py 读 g_dbg 的 14/15 槽）
-         *   [14] = 收到多少 0x203 帧（ID3 电调的反馈）
-         *   [15] = 收到多少其它 ID 的帧
-         * 判据：[14] 一直为 0 → 那个电调压根没发帧（硬件问题）；
-         *        [14] 在涨而 a2 为 0 → 是代码问题。 */
-        g_dbg[14] = (int32_t)g_rx203;
-        g_dbg[15] = (int32_t)g_rxOther;
+        /* 2026-10-23：12~15 放四个轮子的**目标**（×100）。
+         * 原因：串口/USB 有时掉线，把 t 塞进 SWD 槽后，只靠 SWD 也能同时看到
+         * t1~t4（12~15）和 r1~r4（8~11），判断"指令 vs 实际"有没有对不上。
+         * （stopFlag 槽位已让给 t1：停车时 t 全 0 即可判断） */
+        g_dbg[12] = (int32_t)(wheelTargetRpm[0] * 100.0f);
+        g_dbg[13] = (int32_t)(wheelTargetRpm[1] * 100.0f);
+        g_dbg[14] = (int32_t)(wheelTargetRpm[2] * 100.0f);
+        g_dbg[15] = (int32_t)(wheelTargetRpm[3] * 100.0f);
 
         if (page == 0) {
             /* ===== A 行：姿态 + 电池电压 ===== */

@@ -27,7 +27,7 @@ import time
 from pyocd.core.helpers import ConnectHelper
 
 NAMES = ["tgt", "rpm", "cur", "stop", "vbat", "sL", "sR", "col",
-         "r1", "r2", "r3", "r4", "cstop", "ctgt", "rx203", "rxOther"]
+         "r1", "r2", "r3", "r4", "t1", "t2", "t3", "t4"]
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ELF = os.path.join(ROOT, "01_firmware", "RM2027_School_Comp_Frame", "build", "RM_Frame_C.elf")
@@ -79,15 +79,16 @@ def main():
             v = [t.read32(addr + 4 * k) for k in range(16)]
             v = [x - (1 << 32) if x >= (1 << 31) else x for x in v]
             d = dict(zip(NAMES, v))
-            print("M2006 tgt%7.2f m%7.2f st%d | r1%7.2f r2%7.2f r3%7.2f r4%7.2f cst%d | "
-                  "vbat%6.2f sL%3d sR%3d col%5.2f | rx203%6d rxOther%6d"
+            print("M2006 tgt%7.2f m%7.2f st%d | t1%7.2f t2%7.2f t3%7.2f t4%7.2f | "
+                  "r1%7.2f r2%7.2f r3%7.2f r4%7.2f | vbat%6.2f sL%3d sR%3d col%5.2f"
                   % (d["tgt"] / 100, d["rpm"] / 100, d["stop"],
-                     d["r1"] / 100, d["r2"] / 100, d["r3"] / 100, d["r4"] / 100, d["cstop"],
-                     d["vbat"] / 100, d["sL"], d["sR"], d["col"] / 100,
-                     d["rx203"], d["rxOther"]))
+                     d["t1"] / 100, d["t2"] / 100, d["t3"] / 100, d["t4"] / 100,
+                     d["r1"] / 100, d["r2"] / 100, d["r3"] / 100, d["r4"] / 100,
+                     d["vbat"] / 100, d["sL"], d["sR"], d["col"] / 100))
         t.resume()
         print("[+] 已恢复运行")
 
 
 if __name__ == "__main__":
     main()
+

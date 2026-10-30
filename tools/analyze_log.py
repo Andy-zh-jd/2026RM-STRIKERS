@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """分析 read_serial.py --log 录下来的串口日志。
 
 用法：
@@ -14,6 +14,11 @@
 import re
 import sys
 from collections import defaultdict
+
+try:                              # Windows 控制台默认 GBK，强制 UTF-8 免得出乱码/报错
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 FIELDS = ["q0", "q1", "q2", "q3", "t1", "t2", "t3", "t4",
           "r1", "r2", "r3", "r4", "sL", "sR", "col"]
@@ -82,8 +87,9 @@ def main():
         print("    t 平均: " + "  ".join(f"t{i+1}={mt[i]:+7.2f}({sign(mt[i])})" for i in range(4)))
         print("    r 平均: " + "  ".join(f"r{i+1}={mr[i]:+7.2f}({sign(mr[i])})" for i in range(4)))
         ok = all(sign(mt[i]) == sign(mr[i]) for i in range(4))
-        print("    t/r 符号一致: " + ("是 ✅" if ok else "否 ❌"))
+        print("    t/r 符号一致: " + ("是  OK" if ok else "否  <<< 有问题"))
 
 
 if __name__ == "__main__":
     main()
+
