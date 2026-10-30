@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by LEGION on 2021/10/4.
 //
 #include "ControlTask.h"
@@ -116,9 +116,20 @@ void CtrlHandle(){
          *   左摇杆右推 → 顺时针自转 ：**要取负**，因为公式里 ω 正 = 俯视逆时针
          * 实测依据：右推时四个轮子呈"左前后、右前前"的组合，按运动学那正是"向左平移"；
          *           左摇杆右推时左侧后、右侧前，那是"逆时针"。两个都反了，所以这两项加负号。 */
-        ChassisSetVelocity(rcDeadzone(RemoteControl::rcInfo.right_col)*3.0,
-                           -rcDeadzone(RemoteControl::rcInfo.right_rol)*3.0,
-                           -rcDeadzone(RemoteControl::rcInfo.left_rol)*60);
+        {
+            float v_fb = rcDeadzone(RemoteControl::rcInfo.right_col) * 3.0f;
+            float v_lr = -rcDeadzone(RemoteControl::rcInfo.right_rol) * 3.0f;
+            float v_rt = -rcDeadzone(RemoteControl::rcInfo.left_rol) * 60.0f;
+
+            /* 2026-10-23：**摇杆全在中位 → 直接断电，而不是"0 速保持"**。
+             * 之前用 SetTargetSpeed(0) 会让四个电机的 stopFlag 解开 = 通电保持在 0 速；
+             * 电调零点偏移/编码器噪声/地面微斜都会让它慢慢爬（实测"没操作车也在动"就是它）。 */
+            if (v_fb == 0.0f && v_lr == 0.0f && v_rt == 0.0f) {
+                ChassisStop();          /* stopFlag=1：电机彻底不输出 */
+            } else {
+                ChassisSetVelocity(v_fb, v_lr, v_rt);
+            }
+        }
         UserStop();      /* 2026-10-23：驾驶档位时机构必须断电，否则从中档切上来会保持上次的目标 */
         break;
 
