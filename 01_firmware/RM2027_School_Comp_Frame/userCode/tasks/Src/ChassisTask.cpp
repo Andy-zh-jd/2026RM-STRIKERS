@@ -45,14 +45,26 @@ Motor CMBR(ID_WHEEL_BR,&chassisMotorInit);//定义右后轮电机
 uint8_t ChassisStopFlag = 1;
 float FBVelocity,LRVelocity,RTVelocity;
 
+/* 2026-10-23：单轮调试/直接指定目标模式标志。1 = 绕过逆解，直接按 wheelTargetRpm 驱动四轮 */
+static uint8_t manualWheelMode = 0;
+
 /* 四个轮子的目标转速（输出轴 rpm），WheelsSpeedCalc 写、打印读 */
 float wheelTargetRpm[4] = {0};
 
+/* 2026-10-23：直接指定四个轮子的目标（绕过逆解），用于"对角轮对照实验"。
+ * 用法：a=左前 b=右前 c=左后 d=右后 的**车体坐标**目标 rpm（内部乘 SIGN）。
+ * 之后 ChassisHandle 会按 manualWheelMode 一直驱动它们，直到 ChassisSetVelocity/ChassisStop。 */
+void ChassisSetWheelPattern4(float a, float b, float c, float d){
+    manualWheelMode = 1;
+    ChassisStopFlag = 0;
+    wheelTargetRpm[0] = a;
+    wheelTargetRpm[1] = b;
+    wheelTargetRpm[2] = c;
+    wheelTargetRpm[3] = d;
+}
+
 /* 当前单轮调试选中的轮子下标（0=左前 1=右前 2=左后 3=右后），打印用 */
 uint8_t g_selWheel = 0;
-
-/* 2026-10-23：单轮调试模式标志。1 = 绕过逆解，直接按 wheelTargetRpm 驱动四轮 */
-static uint8_t manualWheelMode = 0;
 
 void ChassisStart(){
 

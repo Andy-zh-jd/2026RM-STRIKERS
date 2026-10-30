@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by LEGION on 2021/10/4.
 //
 #include "ControlTask.h"
@@ -51,6 +51,34 @@ static float rcDeadzone(float v)
  * 无人操作时自动转轮子是危险行为。需要它时再改成 1（轮子必须悬空）。 */
 #define DBG_BENCH_WHEEL  0
 #define BENCH_WHEEL_IDX  2      /* 台架默认测左后轮 = 2 */
+
+/* ===== 2026-10-23：自动动作循环（验证麦轮运动学用）=====
+ * =1 时，SB 上档 + SC 上档 就会**自动**按 3 秒一拍循环这五个动作，不用推摇杆：
+ *   0 前进 / 1 右移 / 2 左移 / 3 顺时针 / 4 逆时针
+ * 速度都压到轮子输出 ~25-30 rpm（很慢，肉眼能看清），方便判断"车往哪走"。
+ * 验证完运动学后改回 0。 */
+#define DBG_SEQ_MODE  1
+
+#if DBG_SEQ_MODE
+/* 返回当前阶段，并给出该阶段的三轴速度 */
+static uint8_t seqPhase(float *fb, float *lr, float *rt)
+{
+    static uint32_t t0 = 0;
+    if (t0 == 0) t0 = HAL_GetTick();
+    uint8_t ph = (uint8_t)(((HAL_GetTick() - t0) / 3000u) % 7u);
+    *fb = 0.0f; *lr = 0.0f; *rt = 0.0f;
+    switch (ph) {
+    case 0: *fb = 0.20f;  break;   /* 前进   */
+    case 1: *lr = -0.20f; break;   /* 右移   */
+    case 2: *lr = +0.20f; break;   /* 左移   */
+    case 3: *rt = -6.0f;  break;   /* 顺时针 */
+    case 4: *rt = +6.0f;  break;   /* 逆时针 */
+    case 5: ChassisSetWheelPattern4(+30.0f, 0.0f, 0.0f, +30.0f); break; /* 左前+右后 正转 */
+    case 6: ChassisSetWheelPattern4(0.0f, +30.0f, +30.0f, 0.0f); break; /* 右前+左后 正转 */
+    }
+    return ph;
+}
+#endif
 
 #if CHASSIS_TEST_MODE
 /* SC/SB → 轮子下标：0左前 1右前 2左后 3右后（真值表见上） */
@@ -117,6 +145,19 @@ void CtrlHandle(){
          * 实测依据：右推时四个轮子呈"左前后、右前前"的组合，按运动学那正是"向左平移"；
          *           左摇杆右推时左侧后、右侧前，那是"逆时针"。两个都反了，所以这两项加负号。 */
         {
+#if DBG_SEQ_MODE
+            /* 自动循环演示（不用推摇杆）：看车往哪边走 */
+            float sfb, slr, srt;
+            uint8_t ph = seqPhase(&sfb, &slr, &srt);
+            g_selWheel = ph;              /* 借 wi 字段把当前阶段号发到串口 */
+            if (ph >= 5u) {
+                /* 对角对照拍：seqPhase 里已经设好四个轮子的目标，别覆盖 */
+            } else if (sfb == 0.0f && slr == 0.0f && srt == 0.0f) {
+                ChassisStop();
+            } else {
+                ChassisSetVelocity(sfb, slr, srt);
+            }
+#else
             float v_fb = rcDeadzone(RemoteControl::rcInfo.right_col) * 3.0f;
             float v_lr = -rcDeadzone(RemoteControl::rcInfo.right_rol) * 3.0f;
             float v_rt = -rcDeadzone(RemoteControl::rcInfo.left_rol) * 60.0f;
@@ -129,6 +170,7 @@ void CtrlHandle(){
             } else {
                 ChassisSetVelocity(v_fb, v_lr, v_rt);
             }
+#endif
         }
         UserStop();      /* 2026-10-23：驾驶档位时机构必须断电，否则从中档切上来会保持上次的目标 */
         break;
@@ -158,4 +200,6 @@ void CtrlHandle(){
     }
 #endif
 }
+
+
 

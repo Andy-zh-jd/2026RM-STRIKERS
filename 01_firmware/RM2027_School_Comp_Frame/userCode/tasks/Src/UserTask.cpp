@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by LEGION on 2021/10/4.
 //
 #include "UserTask.h"
@@ -21,7 +21,7 @@ extern volatile uint32_t g_rx203, g_rxOther;
  *   最小模式下 USB 正常 → 说明是某个阻塞外设（最可能是 SPI 读 IMU 超时）拖死了 1ms 中断。
  * DBG_UART = 1 → 同一行数据同时从 UART1（PA9=TX，115200）发出去，USB 挂了也能用 CH340 看。
  *   ⚠️ HAL_UART_Transmit 是阻塞的（60 字节≈5ms），塞进 1ms 中断会拖垮 USB 控制传输，默认关。 */
-#define DBG_MINIMAL 1/* 1 = IMU 只读一次 chip id 然后彻底不读（体检用）*/
+#define DBG_MINIMAL 0/* 1 = IMU 只读一次 chip id 然后彻底不读（体检用）*/
 #define DBG_IMU_IDONLY 1
 /* IMU 周期读取的分频：1ms 中断里每 IMU_DIV 次读一次
  *   IMU_DIV=100 → 10Hz（T1 测试）；5 → 200Hz（最终目标）；1 → 1kHz（之前会卡死）*/
