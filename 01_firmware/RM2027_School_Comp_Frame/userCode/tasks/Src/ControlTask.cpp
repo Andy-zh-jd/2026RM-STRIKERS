@@ -65,7 +65,7 @@ static uint8_t seqPhase(float *fb, float *lr, float *rt)
 {
     static uint32_t t0 = 0;
     if (t0 == 0) t0 = HAL_GetTick();
-    uint8_t ph = (uint8_t)(((HAL_GetTick() - t0) / 3000u) % 7u);
+    uint8_t ph = (uint8_t)(((HAL_GetTick() - t0) / 3000u) % 5u);
     *fb = 0.0f; *lr = 0.0f; *rt = 0.0f;
     switch (ph) {
     case 0: *fb = 0.20f;  break;   /* 前进   */
@@ -200,6 +200,8 @@ void CtrlHandle(){
     }
 #endif
 }
+
+
 
 
 

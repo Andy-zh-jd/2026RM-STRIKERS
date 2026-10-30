@@ -10,20 +10,25 @@
 #define CHASSIS_IQ_MAX   12000
 
 PID_Regulator_t pidRegulator = {//此为储存pid参数的结构体，四个底盘电机共用
-        /* 2026-10-23：**调参阶段推迟到整车装配完成后**（见 03_docs/M3-逐轮验收表.md）。
-         * 现在只做"逐轮有效性验证"，只需要"能转 + 方向对"，不需要精度，
-         * 所以退回纯 P（ki=0 不起积分，绝不会因积分饱和而振荡，测试结果干净）。
+        /* 2026-10-30 晚：整车装好、四轮验收完成，开始调参。
          *
-         * 已踩过的两个坑（调参时别忘）：
-         *   · 纯 P 必然有静差：t3=29 时 r3 只到 8~17
-         *   · ki=0.5 / kiMax=6000 在空载轮上会振荡（积分权限 ≈7.3A 太大）
-         *     → 调参时从 ki=0.05 / kiMax=1500 起步，且**在高转速（60~100% 额定）上先调**
-         *   · 框架 errSum 不乘 dt，1kHz 下 ki 量级是 0.0x~0.1（不是仿真里的 10）*/
-        .kp = 120,
-        .ki = 0,
+         * 基线实测（落地直线，kp=120/ki=0）：目标 44 rpm → 实测 40 rpm，跟踪率 88~90%，
+         * 四轮间差 2~6%，稳态偏航 gz ≈ ±1.5°/s（跑 3.6 s 只偏 5°）→ 机械和电气都健康，
+         * 所以现在的问题就是**纯 P 的静差**。
+         *
+         * 本轮改动：kp 120→180（起步更快、静差减半），
+         *           ki 0→0.10 + componentKiMax 0→1500（消掉剩余静差）。
+         *
+         * ⚠️ 三条调参常识（踩过的坑）：
+         *   · 框架 errSum **不乘 dt**，1 kHz 下 ki 的量级是 0.0x~0.1（不是仿真里的 10）
+         *   · ki 必须和 componentKiMax 一起改：钳位是 ±componentKiMax/ki，只改 ki 会积分饱和
+         *   · ki=0.5/kiMax=6000 在空载轮上会振荡（积分权限≈7.3 A 太大），别一步加太猛
+         *   · 调参要**在高转速（60~100% 额定）上先调**，3% 额定转速区间摩擦主导，怎么调都抖 */
+        .kp = 180,
+        .ki = 0.10f,
         .kd = 0,
         .componentKpMax = 16384,
-        .componentKiMax = 0,
+        .componentKiMax = 1500,
         .componentKdMax = 0,
         .outputMax = CHASSIS_IQ_MAX //3508电机输出电流上限，可以调小，勿调大
 };
@@ -66,6 +71,47 @@ void ChassisSetWheelPattern4(float a, float b, float c, float d){
 /* 当前单轮调试选中的轮子下标（0=左前 1=右前 2=左后 3=右后），打印用 */
 uint8_t g_selWheel = 0;
 
+/* ===== 2026-10-30：车载 RAM 日志（下地测试专用）=====
+ * 为什么需要：下地跑车时不能连着电脑（USB 线会把车拽住），所以把数据先存进 RAM，
+ * 跑完再插 ST-Link 用 tools\read_log.py 读出来。
+ * 每 20 ms 存一帧：t1~t4（目标 rpm×10）、r1~r4（实测 rpm×10）、gz（陀螺 ×10），
+ * 共 512 帧 ≈ 10.2 秒，够跑一次直线或一次台阶。
+ * 读法：pyocd 用 attach 模式（不能 reset，否则 RAM 清空），见 tools\read_log.py。 */
+#define WHEEL_LOG_N    1024
+int16_t  g_wheelLog[WHEEL_LOG_N][9];
+volatile uint16_t g_wheelLogIdx   = 0;    /* 下一个要写的行（环形） */
+volatile uint32_t g_wheelLogTotal = 0;    /* 累计写了多少帧（用来排序） */
+
+extern float g_gyroLpf[3];   /* 定义在 UserTask.cpp */
+
+static void WheelLogSample(void)
+{
+    /* **只在车动的时候记录**：否则静止 10 秒就把缓冲占满了，真正跑车的数据被覆盖。
+     * 判据：任一目标 >0.5 rpm 或任一实测 >2 rpm 就认为在动。 */
+    float at = 0.0f, ar = 0.0f;
+    for (int i = 0; i < 4; i++) {
+        float t = wheelTargetRpm[i];
+        float r = (i == 0) ? CMFL.state.speed : (i == 1) ? CMFR.state.speed
+                : (i == 2) ? CMBL.state.speed : CMBR.state.speed;
+        at += (t < 0.0f ? -t : t);
+        ar += (r < 0.0f ? -r : r);
+    }
+    if (at < 0.5f && ar < 2.0f) return;
+
+    int16_t *p = g_wheelLog[g_wheelLogIdx];
+    p[0] = (int16_t)(wheelTargetRpm[0] * 10.0f);
+    p[1] = (int16_t)(wheelTargetRpm[1] * 10.0f);
+    p[2] = (int16_t)(wheelTargetRpm[2] * 10.0f);
+    p[3] = (int16_t)(wheelTargetRpm[3] * 10.0f);
+    p[4] = (int16_t)(CMFL.state.speed * 10.0f);
+    p[5] = (int16_t)(CMFR.state.speed * 10.0f);
+    p[6] = (int16_t)(CMBL.state.speed * 10.0f);
+    p[7] = (int16_t)(CMBR.state.speed * 10.0f);
+    p[8] = (int16_t)(g_gyroLpf[2] * 10.0f);
+    g_wheelLogIdx = (uint16_t)((g_wheelLogIdx + 1u) % WHEEL_LOG_N);
+    g_wheelLogTotal++;
+}
+
 void ChassisStart(){
 
 }
@@ -87,6 +133,13 @@ void ChassisHandle() {
     CMFR.Handle();
     CMBL.Handle();
     CMBR.Handle();
+
+    /* 车载日志：每 20 ms 记一帧（1 kHz 中断里分频） */
+    static uint8_t logDiv = 0;
+    if (++logDiv >= 20u) {
+        logDiv = 0;
+        WheelLogSample();
+    }
 }
 /**
  * @brief 用于控制任务控制底盘速度
