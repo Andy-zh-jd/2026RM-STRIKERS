@@ -103,18 +103,18 @@ def main():
         rows = rows[-args.tail:]
 
     if args.raw:
-        print("t_ms,t1,t2,t3,t4,r1,r2,r3,r4,gz")
+        print("t_ms,t1,t2,t3,t4,r1,r2,r3,r4,gx,gy,gz")
         for i, v in enumerate(rows):
-            print("%d,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f"
+            print("%d,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f"
                   % (i * PERIOD_MS, v[0] / 10, v[1] / 10, v[2] / 10, v[3] / 10,
-                     v[4] / 10, v[5] / 10, v[6] / 10, v[7] / 10, v[8] / 10))
+                     v[4] / 10, v[5] / 10, v[6] / 10, v[7] / 10, v[8] / 10, v[9] / 10, v[10] / 10))
         return
 
     print(" 帧  时间    t1     t2     t3     t4  |   r1     r2     r3     r4  |   gz")
     for i, v in enumerate(rows):
         print("%3d %5.1fs %6.1f %6.1f %6.1f %6.1f | %6.1f %6.1f %6.1f %6.1f | %6.1f"
               % (i, i * PERIOD_MS / 1000.0, v[0] / 10, v[1] / 10, v[2] / 10, v[3] / 10,
-                 v[4] / 10, v[5] / 10, v[6] / 10, v[7] / 10, v[8] / 10))
+                 v[4] / 10, v[5] / 10, v[6] / 10, v[7] / 10, v[8] / 10, v[9] / 10, v[10] / 10))
 
     if rows:
         # 简单统计：有驱动的帧里，四个轮子的平均回读
@@ -130,4 +130,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
