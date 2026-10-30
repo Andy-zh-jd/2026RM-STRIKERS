@@ -107,9 +107,5 @@ void ChassisSetVelocity(float _fbV,float _lrV,float _rtV);
  * idx: 0=左前 1=右前 2=左后 3=右后；rpm 为输出轴转速（正负=方向）
  * 退出方式：调 ChassisStop() 或 ChassisSetVelocity() */
 void ChassisSetWheelSpeed(uint8_t idx, float rpm);
-void ChassisSetWheelPattern4(float a, float b, float c, float d);
 #endif //RM_FRAME_C_CHASSISTASK_H
-
-
-
 
