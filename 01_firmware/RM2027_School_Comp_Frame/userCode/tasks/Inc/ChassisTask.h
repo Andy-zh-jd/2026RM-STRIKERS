@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by LEGION on 2021/10/4.
 //
 
@@ -37,9 +37,9 @@
  *   1) 四个 ID 必须**互不相同**，否则同一 ID 的两个电调会撞车（橙灯闪 2 次、输出关闭）
  *   2) 不要用 ID 5（0x1FF 帧被 M2006 占了），也不要用 6~8（框架没建对象）
  */
-#define ID_WHEEL_FL   MOTOR_ID_1   /* 左前 = 电调 ID 1 */
+#define ID_WHEEL_FL   MOTOR_ID_3   /* 左前 = 电调 ID 3 */
 #define ID_WHEEL_FR   MOTOR_ID_4   /* 右前 = 电调 ID 4 */
-#define ID_WHEEL_BL   MOTOR_ID_3   /* 左后 = 电调 ID 3 */
+#define ID_WHEEL_BL   MOTOR_ID_1   /* 左后 = 电调 ID 1 */
 #define ID_WHEEL_BR   MOTOR_ID_2   /* 右后 = 电调 ID 2 */
 
 /* ===================== 电机方向补偿（2026-10-23 实测） =====================
@@ -110,3 +110,4 @@ void ChassisSetVelocity(float _fbV,float _lrV,float _rtV);
  * 退出方式：调 ChassisStop() 或 ChassisSetVelocity() */
 void ChassisSetWheelSpeed(uint8_t idx, float rpm);
 #endif //RM_FRAME_C_CHASSISTASK_H
+
