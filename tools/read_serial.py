@@ -12,6 +12,7 @@
 省掉每次去设备管理器里翻的时间。
 """
 import argparse
+import os
 import sys
 import time
 
@@ -48,6 +49,7 @@ def main() -> None:
     ap.add_argument("-t", "--seconds", type=float, default=0, help="读多少秒，0=一直读")
     ap.add_argument("-p", "--port", default="", help="手动指定串口，如 COM7")
     ap.add_argument("-b", "--baud", type=int, default=115200)
+    ap.add_argument("--log", default="", help="同时把每行带到时间戳写进这个文件（utf-8）")
     args = ap.parse_args()
 
     port = args.port or find_port()
@@ -62,14 +64,26 @@ def main() -> None:
 
     t0 = time.time()
     nbytes = nlines = 0
+    if args.log:
+        _d = os.path.dirname(os.path.abspath(args.log))
+        if _d:
+            os.makedirs(_d, exist_ok=True)
+    log = open(args.log, "w", encoding="utf-8") if args.log else None
+    if log:
+        log.write("t_sec\tline\n")
+        print(f"[+] 同时录制到 {args.log}（Ctrl+C 结束后可用 python tools\\analyze_log.py 分析）")
     try:
         while True:
             line = ser.readline()
             if line:
                 nbytes += len(line)
                 nlines += 1
-                sys.stdout.write(line.decode("utf-8", "replace"))
+                txt = line.decode("utf-8", "replace")
+                sys.stdout.write(txt)
                 sys.stdout.flush()
+                if log:
+                    log.write(f"{time.time() - t0:.3f}\t{txt.rstrip()}\n")
+                    log.flush()
             if args.seconds and (time.time() - t0) >= args.seconds:
                 break
             if not line and args.seconds == 0:
@@ -78,8 +92,12 @@ def main() -> None:
         pass
     finally:
         ser.close()
+        if log:
+            log.close()
         dt = max(time.time() - t0, 1e-6)
         print(f"\n[+] 结束：{dt:.1f}s，{nlines} 行 / {nbytes} 字节（{nbytes/dt:.0f} B/s）")
+        if args.log:
+            print(f"[+] 录制文件：{args.log}")
 
 
 if __name__ == "__main__":
