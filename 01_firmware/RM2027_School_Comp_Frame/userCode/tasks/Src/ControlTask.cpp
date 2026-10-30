@@ -44,7 +44,13 @@ static float rcDeadzone(float v)
  *
  * CHASSIS_TEST_MODE = 0 → 正常驾驶模式：SB 上档 = 底盘听摇杆，中档 = M2006。
  * 四轮验收完、底盘装好之后，把这里改成 0。 */
-#define CHASSIS_TEST_MODE 0   /* 驾驶模式（绑定已按实测修正） */
+#define CHASSIS_TEST_MODE 0   /* 驾驶模式：绑定+符号已按实测确认 */
+
+/* ===== 2026-10-30：纯横移自动测试（排除手法影响）=====
+ * =1 时，SB上+SC上 就自动循环：右移 3s → 停 1s → 左移 3s → 停 1s。
+ * 指令是纯横向 0.20 m/s，没有任何前后分量，用来看"车到底横着走还是斜着走"。
+ * 测完改回 0。 */
+#define DBG_STRAFE_SEQ 0
 
 /* ===== 台架模式：没有可用遥控器时，自动驱动单个轮子验证接线/ID/方向 =====
  * ⚠️ 2026-10-23 起默认**关闭**：遥控已能正常工作，而且现在四个轮子逐渐装上车，
@@ -106,6 +112,22 @@ void CtrlHandle(){
     switch (RemoteControl::rcInfo.sLeft)
     {
     case UP_POS: //左侧一档：底盘听摇杆
+#if DBG_STRAFE_SEQ
+        {
+            /* 纯横移自动测试：右移 3s → 停 1s → 左移 3s → 停 1s */
+            static uint32_t st0 = 0;
+            if (st0 == 0) st0 = HAL_GetTick();
+            uint32_t ms = HAL_GetTick() - st0;
+            uint32_t ph = (ms / 1000u) % 8u;      /* 8 秒一轮 */
+            if (ph < 3u)        ChassisSetVelocity(0.0f, -0.20f, 0.0f);  /* 右移 */
+            else if (ph < 4u)   ChassisStop();                           /* 停   */
+            else if (ph < 7u)   ChassisSetVelocity(0.0f, +0.20f, 0.0f);  /* 左移 */
+            else                ChassisStop();                           /* 停   */
+            g_selWheel = (uint8_t)ph;
+        }
+        UserStop();
+        break;
+#else
         // 2026-10-20：满杆系数由 4.2 改成 3.0。
         // 原因：M3508 输出轴空载只有 482 rpm ≈ 3.85 m/s，4.2 会让 PID 长期顶在 16384 饱和
         //（表现是"推满杆反而发死"）。3.0 m/s 留了余量，底盘稳了再往上加。
@@ -121,6 +143,7 @@ void CtrlHandle(){
                            -rcDeadzone(RemoteControl::rcInfo.left_rol)*60);
         UserStop();      /* 2026-10-23：驾驶档位时机构必须断电，否则从中档切上来会保持上次的目标 */
         break;
+#endif
 
     case MID_POS: //左侧二档：用右摇杆控制 M2006（机构电机）
         // 台架验证用。满杆 = ±30 rpm（输出轴，36:1 减速后很慢，安全）。
@@ -147,5 +170,7 @@ void CtrlHandle(){
     }
 #endif
 }
+
+
 
 
