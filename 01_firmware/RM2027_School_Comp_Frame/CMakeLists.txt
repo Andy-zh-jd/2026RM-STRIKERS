@@ -1,0 +1,76 @@
+#THIS FILE IS AUTO GENERATED FROM THE TEMPLATE! DO NOT CHANGE!
+SET(CMAKE_SYSTEM_NAME Generic)
+SET(CMAKE_SYSTEM_VERSION 1)
+cmake_minimum_required(VERSION 3.7)
+
+# specify cross compilers and tools
+SET(CMAKE_C_COMPILER_WORKS 1)
+SET(CMAKE_C_COMPILER arm-none-eabi-gcc)
+SET(CMAKE_CXX_COMPILER_WORKS 1)
+SET(CMAKE_CXX_COMPILER arm-none-eabi-g++)
+set(CMAKE_ASM_COMPILER  arm-none-eabi-gcc)
+set(CMAKE_AR arm-none-eabi-ar)
+set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
+set(CMAKE_OBJDUMP arm-none-eabi-objdump)
+set(SIZE arm-none-eabi-size)
+
+SET(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F407IGHx_FLASH.ld)
+
+#Uncomment for hardware floating point
+#SET(FPU_FLAGS "-mfloat-abi=hard -mfpu=fpv4-sp-d16")
+#add_definitions(-DARM_MATH_CM4 -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING -D__FPU_PRESENT=1)
+
+#Uncomment for software floating point
+#SET(FPU_FLAGS "-mfloat-abi=soft")
+
+SET(COMMON_FLAGS
+    "-mcpu=cortex-m4 ${FPU_FLAGS} -mthumb -mthumb-interwork -ffunction-sections -fdata-sections \
+    -g -O2 -fno-common -fmessage-length=0 -specs=nosys.specs -specs=nano.specs")
+
+SET(CMAKE_CXX_FLAGS_INIT "${COMMON_FLAGS} -std=c++11")
+SET(CMAKE_C_FLAGS_INIT "${COMMON_FLAGS} -std=gnu99")
+# --- 本地修改 1/2：链接脚本路径用相对路径（见 README-本地构建说明.md）---------
+# 工程路径含空格（F:\Program Files\交龙校内赛\...），ld 的 "-T <绝对路径>" 会在
+# 空格处被拆开，报 cannot open linker script file F:/Program。改成相对 build 目录。
+get_filename_component(LINKER_SCRIPT_NAME ${LINKER_SCRIPT} NAME)
+SET(CMAKE_EXE_LINKER_FLAGS_INIT "-Wl,-gc-sections,--print-memory-usage -T ../${LINKER_SCRIPT_NAME}")
+
+PROJECT(RM_Frame_C C CXX ASM)
+set(CMAKE_CXX_STANDARD 11)
+
+#add_definitions(-DARM_MATH_CM4 -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING -D__FPU_PRESENT=1)
+add_definitions(-D__weak=__attribute__\(\(weak\)\) -D__packed=__attribute__\(\(__packed__\)\) -DUSE_HAL_DRIVER -DSTM32F407xx)
+
+file(GLOB_RECURSE SOURCES "startup/*.*" "Drivers/*.*" "Src/*.*" "Inc/*.*" "Middlewares/ST/STM32_USB_Device_Library/Core/Src/*.*"
+        "Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/*.*"
+        "userCode/bsp/Src/*.*" "userCode/devices/Src/*.*"
+        "userCode/tasks/Src/*.*" )
+
+include_directories(Inc Drivers/STM32F4xx_HAL_Driver/Inc Drivers/STM32F4xx_HAL_Driver/Inc/Legacy
+        Drivers/CMSIS/Device/ST/STM32F4xx/Include
+        Drivers/CMSIS/Include
+        Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
+        Middlewares/ST/STM32_USB_Device_Library/Core/Inc
+        userCode/bsp/Inc
+        userCode/devices/Inc
+        userCode/tasks/Inc
+        )
+
+add_executable(${PROJECT_NAME}.elf ${SOURCES} ${LINKER_SCRIPT})
+
+# --- 本地修改 2/2：Map 文件同样改用相对路径（绝对路径含空格会被 ld 截断）------
+set(CMAKE_EXE_LINKER_FLAGS
+    "${CMAKE_EXE_LINKER_FLAGS} -Wl,-Map=${PROJECT_NAME}.map")
+
+# --- 本地修改 3/3：objcopy 也只能吃相对路径 ----------------------------------
+# 中文路径（交龙校内赛）经 cmd.exe 传给 objcopy 会变成乱码，报 No such file。
+# POST_BUILD 的工作目录就是 build/，所以这里全部用文件名。
+set(HEX_FILE ${PROJECT_NAME}.hex)
+set(BIN_FILE ${PROJECT_NAME}.bin)
+
+add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
+        COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE_NAME:${PROJECT_NAME}.elf> ${HEX_FILE}
+        COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE_NAME:${PROJECT_NAME}.elf> ${BIN_FILE}
+        COMMAND ${SIZE} $<TARGET_FILE_NAME:${PROJECT_NAME}.elf>
+        COMMENT "Building ${HEX_FILE}
+Building ${BIN_FILE}")

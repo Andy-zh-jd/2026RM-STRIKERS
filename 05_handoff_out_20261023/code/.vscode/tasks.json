@@ -1,0 +1,103 @@
+{
+  "version": "2.0.0",
+  "options": {
+    "cwd": "${workspaceFolder}"
+  },
+  "tasks": [
+    {
+      "label": "0 配置 configure",
+      "type": "shell",
+      "command": "cmake -G Ninja -B build",
+      "problemMatcher": [],
+      "detail": "首次或删过 build/ 之后跑一次"
+    },
+    {
+      "label": "build 编译（快捷键 Ctrl+Shift+B）",
+      "type": "shell",
+      "command": "cmake --build build",
+      "dependsOn": "0 配置 configure",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"],
+      "detail": "产出 build/RM_Frame_C.elf / .hex / .bin，并打印 FLASH/RAM 占用"
+    },
+    {
+      "label": "flash 烧录（ST-Link）",
+      "type": "shell",
+      "command": "pyocd flash -t stm32f407ighx build/RM_Frame_C.hex",
+      "dependsOn": "build 编译（快捷键 Ctrl+Shift+B）",
+      "problemMatcher": [],
+      "detail": "需要 C 板 + ST-Link 已插上"
+    },
+    {
+      "label": "erase 整片擦除（救砖）",
+      "type": "shell",
+      "command": "pyocd erase -t stm32f407ighx --chip",
+      "problemMatcher": []
+    },
+    {
+      "label": "reset 复位",
+      "type": "shell",
+      "command": "pyocd reset -t stm32f407ighx",
+      "problemMatcher": []
+    },
+    {
+      "label": "size 看固件占用",
+      "type": "shell",
+      "command": "arm-none-eabi-size build/RM_Frame_C.elf",
+      "problemMatcher": []
+    },
+    {
+      "label": "ports 查串口",
+      "type": "shell",
+      "command": "python -c \"import serial.tools.list_ports as p;[print(x.device, x.description) for x in p.comports()]\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "monitor 串口监视器",
+      "type": "shell",
+      "command": "python -m serial.tools.miniterm ${input:com} 115200",
+      "problemMatcher": [],
+      "detail": "退出按 Ctrl+]"
+    },
+    {
+      "label": "gdb 调试服务（可选）",
+      "type": "shell",
+      "command": "pyocd gdbserver -t stm32f407ighx -Oreset_type=hw",
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "起来后再用 arm-none-eabi-gdb build/RM_Frame_C.elf 连 localhost:3333"
+    },
+    {
+      "label": "keil 打开工程",
+      "type": "shell",
+      "command": "D:\\UV4\\UV4.exe",
+      "args": ["${workspaceFolder}\\MDK-ARM\\RM_Frame_C.uvprojx"],
+      "options": { "cwd": "D:\\UV4" },
+      "problemMatcher": [],
+      "detail": "本机 Keil 装在 D:\\ 根目录（D:\\UV4\\UV4.exe）"
+    },
+    {
+      "label": "keil 命令行编译",
+      "type": "shell",
+      "command": "D:\\UV4\\UV4.exe",
+      "args": ["-b", "${workspaceFolder}\\MDK-ARM\\RM_Frame_C.uvprojx", "-o", "${workspaceFolder}\\mdk_build.log"],
+      "options": { "cwd": "D:\\UV4" },
+      "problemMatcher": [],
+      "detail": "日志 mdk_build.log；UV4 返回 0=无错 1=有警告 2+=有错误（路径要用真实路径，别用 subst 的 K:，实测会崩）"
+    },
+    {
+      "label": "clean 清理",
+      "type": "shell",
+      "command": "Remove-Item -Recurse -Force build",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "com",
+      "type": "promptString",
+      "description": "串口号（先跑 ports 任务查，例如 COM5）",
+      "default": "COM5"
+    }
+  ]
+}

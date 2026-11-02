@@ -1,0 +1,7 @@
+MATLAB 26.1.0.3346908 (R2026a) Update 5  (PCWIN64)
+已装过的组件数：2
+  - Image Processing Toolbox 26.1
+  - MATLAB 26.1
+Simulink 可用：false
+license('test','Simulink',) = 1
+Simulink 未安装 —— 4 个 .slx 打不开，B 线改用 python 仿真（02_sim/python）。

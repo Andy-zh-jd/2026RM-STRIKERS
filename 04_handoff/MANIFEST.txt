@@ -1,0 +1,20 @@
+RM2027 电控交接包 · 文件清单
+生成时间: 2026-10-17 22:52:02 CST
+
+SHA256                                                            SIZE       PATH
+180c01f064ce8fc5eec008fdab4149d113e22cabf314f6999c5ce3ee4fbc93d7        20K  HANDOFF.md
+671848dc6c873c333dcf9607399d4e1d169ed4a2df4342c38ad426f6e113d56a         4K  README.md
+a1af80ce8f2649eac51cb37fec102a4854817a72885e31a36c7856486601fd3e        12K  artifacts/pid_demo.m
+a41f0eea3f8fbeb1647e228685cdded9bef74540ca2bb23238c3fb98260b6a9a         4K  artifacts/read_serial.py
+e25c99b71197cc5d04e57c11c2cdb479324e5deec5984c33b48ee412d6e2919a      7736K  artifacts/stsw-link009_v3_arm64_unsigned.zip
+6a7850dbf6ac4a05d3c07e97e1a9d2f435e09efceee800f555eaaebd69f466a0         4K  code/ChassisTask.cpp
+970425719ba9b802325b6d46c6883efc26bf9e4f483a53a8f21ee771cd95caef         4K  code/ChassisTask.h
+67ed12b16ee8b5134a6d582a192c38f85481af496e03cbfb19f271163266c4e5         4K  code/ControlTask.cpp
+55d54ac3808b474a11e6a223e77328ec47ae02244104473e94c9bcfddb7b489d         8K  code/Device.cpp
+95f167ad5547660ff763ba4684831ec996a52ec10fd7e0136e0cf066de9c536e        12K  code/Motor.cpp
+8bf068cf225b741648167fa28e1cbc11dea14907a9a3c1c8830bbf888365c8b9         4K  code/Motor.h
+24e941f7b9a13f2a60c204f55c32f9da13a5a119e0fa191fd7a1b2359332a7e5         8K  code/UserTask.cpp
+89a40b5c216e67420b615fcf5df073eead15bee34c241367fc1b3f49b692e28d         4K  code/UserTask.h
+5eaf0b164ac679743da543e8965ce2feaccb783adb6c2405b1e2474005dd11cf         8K  code/main.h
+24304cc445dcc2c27a8c86f4b1b6b012e0362256a9b7ff3d56cce3141fa40caa      6520K  session/raw/session.jsonl
+577916434fb547d3678b1cea5a5c8c9ec3159fe218027b99cfe122971d13e995       284K  session/transcript.md
