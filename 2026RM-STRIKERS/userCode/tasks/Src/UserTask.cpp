@@ -601,6 +601,23 @@ static void ArmFlushOne(void)
 
 
 
+/* ---------- PCA 自愈：芯片被复位（SLEEP=1）就自动重新初始化 ---------- */
+uint8_t g_pcaRecover = 0;
+
+static void PCA_HealthCheck(void)
+{
+    uint8_t m1 = PCA_Read8(PCA_MODE1);
+
+    if (m1 & 0x10) {                      /* bit4 = SLEEP，说明芯片复位了 */
+        PCA_Init();                       /* 重新配置 PRE_SCALE / MODE1 */
+        for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+            PCA_SetAngle(i, armAngle[i]); /* 把所有通道恢复到当前角度 */
+            armSent[i] = -999.0f;         /* 强制下一步重新下发 */
+        }
+        g_pcaRecover++;                   /* 记录恢复次数，便于判断电源是否在抖 */
+    }
+}
+
 /* 急停：全部卸力 */
 static void ArmStopAll(void)
 {
@@ -720,7 +737,12 @@ void UserHandle()
         cnt = 0;
         g_line[0] = '\0';
         /* ---- 机械臂状态 ---- */
-        AppendI("mode=", (int32_t)RemoteControl::rcInfo.sLeft);
+        AppendI("s1=",   (int32_t)(RemoteControl::rcInfo.right_rol * 100));  /* 右摇杆横 */
+        AppendI("s2=",   (int32_t)(RemoteControl::rcInfo.left_col  * 100));  /* 左摇杆竖 */
+        AppendI("s3=",   (int32_t)(RemoteControl::rcInfo.right_col * 100));  /* 右摇杆竖 */
+        AppendI("s4=",   (int32_t)(RemoteControl::rcInfo.left_rol  * 100));  /* 左摇杆横 */
+        AppendI("mL=",   (int32_t)RemoteControl::rcInfo.sLeft);   /* 左拨杆 */
+        AppendI("mR=",   (int32_t)RemoteControl::rcInfo.sRight);  /* 右拨杆：158=急停！*/
         AppendI("rl=",   (int32_t)g_rcLen);              /* 遥控帧长：0=没收到 25=SBUS 18=DBUS */
         AppendI("pca=",  (int32_t)g_pcaMode1);          /* ← 加这行 */
         AppendI("bS=",   (int32_t)g_busScl);            /* 正常 11 */
@@ -732,7 +754,9 @@ void UserHandle()
         AppendS(g_pinStr);                              /* ★ 扫到的针，如 B13,F1 */
         AppendI("a0=",   (int32_t)armAngle[0]);
         AppendI("sent0=",(int32_t)armSent[0]);          /* ← 看下发有没有跟上 */
+        PCA_HealthCheck();                             /* ★ 自愈检查 */
         AppendI("off0=", (int32_t)PCA_ReadOff(0));      /* 回读 CH0 的 OFF 计数，应在 100~500 */
+        AppendI("rcv=",  (int32_t)g_pcaRecover);        /* 恢复次数，一直涨说明电源在抖 */
         AppendI("m1=",   (int32_t)PCA_Read8(PCA_MODE1));/* 应 33(0x21)：SLEEP=0 说明芯片醒着 */
         // ... 你原来的打印 ...
         UsbPrintf("%s\r\n", g_line);
