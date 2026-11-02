@@ -4,6 +4,8 @@
 #include "UserTask.h"
 #include <stdio.h>
 #include <stdarg.h>
+#include <math.h>              /* fabsf/sinf：机械臂限速与测试摆动 */
+#include <string.h>            /* strncat/strncpy：PIN_Scan 结果拼字符串 */
 #include "RemoteControl.h"          // rcInfo（遥控器）
 #include "ChassisTask.h"            // 2026-10-23：wheelTargetRpm/底盘接口（打印四轮目标用）
 #include "tim.h"                    // TIM1: 4x BTS7960 PWM
@@ -223,6 +225,344 @@ MOTOR_INIT_t userMotorInit = {
 
 // 在这里初始化除了4个M3508轮电机之外的电机
 Motor UserMotor(MOTOR_ID_5, &userMotorInit);
+
+/* ================= PCA9685 16 路舵机驱动（软件 I2C） ================= */
+/* ---------- ① 引脚：通信不通时只改这里 ---------- */
+/* 引脚扫描实测：两根线在 B13 / B15 上（F0/F1 是 C 板自带 I2C 上拉，不是线）
+   注意：I2C 不是对称的，SDA/SCL 接反时不会报错，只会一直不应答 → 这里试反接 */
+#define PCA_SCL_PORT    GPIOB
+#define PCA_SCL_PIN     GPIO_PIN_15
+#define PCA_SDA_PORT    GPIOB
+#define PCA_SDA_PIN     GPIO_PIN_13
+/* 备选（如果牛角座走的是 I2C2 那组）：
+   #define PCA_SCL_PORT GPIOF / PCA_SCL_PIN GPIO_PIN_1 / SDA GPIOF PIN_0 */
+
+/* ---------- ② PCA9685 寄存器与参数 ---------- */
+#define PCA_ADDR        0x40
+#define PCA_MODE1       0x00
+#define PCA_MODE2       0x01
+#define PCA_PRESCALE    0xFE
+#define PCA_LED0_ON_L   0x06
+
+/* 舵机脉宽范围（微秒）：MG996R 类 500~2500；SG90 类 1000~2000 */
+#define SERVO_US_MIN    500
+#define SERVO_US_MAX    2500
+
+/* ---------- ③ 软件 I2C 底层 ---------- */
+static void PCA_Delay(void)
+{
+    for (volatile uint32_t i = 0; i < 25; i++) { __NOP(); }
+}
+
+static void PCA_GPIO_Init(void)
+{
+    GPIO_InitTypeDef g = {0};
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+
+    g.Mode  = GPIO_MODE_OUTPUT_OD;     /* 开漏：和板上的 2.2k 上拉配成标准 I2C */
+    g.Pull  = GPIO_PULLUP;
+    g.Speed = GPIO_SPEED_FREQ_HIGH;
+    g.Pin   = PCA_SCL_PIN;  HAL_GPIO_Init(PCA_SCL_PORT, &g);
+    g.Pin   = PCA_SDA_PIN;  HAL_GPIO_Init(PCA_SDA_PORT, &g);
+
+    HAL_GPIO_WritePin(PCA_SCL_PORT, PCA_SCL_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(PCA_SDA_PORT, PCA_SDA_PIN, GPIO_PIN_SET);
+}
+
+#define SCL_H()   HAL_GPIO_WritePin(PCA_SCL_PORT, PCA_SCL_PIN, GPIO_PIN_SET)
+#define SCL_L()   HAL_GPIO_WritePin(PCA_SCL_PORT, PCA_SCL_PIN, GPIO_PIN_RESET)
+#define SDA_H()   HAL_GPIO_WritePin(PCA_SDA_PORT, PCA_SDA_PIN, GPIO_PIN_SET)
+#define SDA_L()   HAL_GPIO_WritePin(PCA_SDA_PORT, PCA_SDA_PIN, GPIO_PIN_RESET)
+#define SDA_RD()  HAL_GPIO_ReadPin(PCA_SDA_PORT, PCA_SDA_PIN)
+
+static void I2C_Start(void)
+{
+    SDA_H(); SCL_H(); PCA_Delay();
+    SDA_L(); PCA_Delay();
+    SCL_L(); PCA_Delay();
+}
+
+static void I2C_Stop(void)
+{
+    SDA_L(); SCL_H(); PCA_Delay();
+    SDA_H(); PCA_Delay();
+}
+
+/* 返回 1 = 收到 ACK（说明从机在线）*/
+static uint8_t I2C_WriteByte(uint8_t b)
+{
+    for (uint8_t i = 0; i < 8; i++) {
+        if (b & 0x80) SDA_H(); else SDA_L();
+        b <<= 1;
+        PCA_Delay();
+        SCL_H(); PCA_Delay();
+        SCL_L(); PCA_Delay();
+    }
+    SDA_H();                       /* 释放 SDA，等从机拉低 */
+    PCA_Delay();
+    SCL_H(); PCA_Delay();
+    uint8_t ack = (SDA_RD() == GPIO_PIN_RESET) ? 1 : 0;
+    SCL_L(); PCA_Delay();
+    return ack;
+}
+
+static uint8_t I2C_ReadByte(void)
+{
+    uint8_t b = 0;
+    SDA_H();
+    for (uint8_t i = 0; i < 8; i++) {
+        PCA_Delay();
+        SCL_H(); PCA_Delay();
+        b <<= 1;
+        if (SDA_RD() == GPIO_PIN_SET) b |= 1;
+        SCL_L(); PCA_Delay();
+    }
+    SDA_H(); PCA_Delay(); SCL_H(); PCA_Delay(); SCL_L();   /* 回 NACK */
+    return b;
+}
+
+/* ---------- ④ PCA9685 寄存器读写 ---------- */
+static void PCA_Write8(uint8_t reg, uint8_t val)
+{
+    I2C_Start();
+    I2C_WriteByte((PCA_ADDR << 1) | 0);
+    I2C_WriteByte(reg);
+    I2C_WriteByte(val);
+    I2C_Stop();
+}
+
+static void PCA_Write4(uint8_t reg, uint8_t *buf)
+{
+    I2C_Start();
+    I2C_WriteByte((PCA_ADDR << 1) | 0);
+    I2C_WriteByte(reg);                     /* ★ 不能加 0x80！
+                                             * PCA9685 的自动递增由 MODE1 的 AI 位控制，
+                                             * 不是靠寄存器地址的 bit7。加了会写到未定义寄存器。*/
+    for (uint8_t i = 0; i < 4; i++) I2C_WriteByte(buf[i]);
+    I2C_Stop();
+}
+
+static uint8_t PCA_Read8(uint8_t reg)
+{
+    uint8_t v;
+    I2C_Start();
+    I2C_WriteByte((PCA_ADDR << 1) | 0);
+    I2C_WriteByte(reg);
+    I2C_Start();                             /* 重复起始 */
+    I2C_WriteByte((PCA_ADDR << 1) | 1);
+    v = I2C_ReadByte();
+    I2C_Stop();
+    return v;
+}
+
+/* 读回某通道的 OFF 计数值（12bit），用来确认数据真的写进芯片了 */
+uint16_t PCA_ReadOff(uint8_t ch)
+{
+    uint8_t reg = (uint8_t)(PCA_LED0_ON_L + 4 * ch + 2);   /* OFF_L */
+    uint8_t l = PCA_Read8(reg);
+    uint8_t h = PCA_Read8((uint8_t)(reg + 1));
+    return (uint16_t)(((h & 0x0F) << 8) | l);
+}
+
+/* ---------- ⑤ 总线自检（临时诊断用，问题解决后可删） ---------- */
+uint8_t g_busScl = 0, g_busSda = 0, g_scanAddr = 0;
+uint8_t g_pdScl  = 0, g_pdSda  = 0, g_scanSlow = 0;
+
+static void DlyLong(void) { for (volatile uint32_t i = 0; i < 300; i++) { __NOP(); } }
+
+/* 慢速扫描（自带时序，约 20kHz）：用来排除"上拉太弱、上升沿太慢"导致的通信失败 */
+static uint8_t PCA_ScanSlow(void)
+{
+    for (uint8_t a = 0x40; a <= 0x78; a++) {
+        SDA_H(); SCL_H(); DlyLong();
+        SDA_L(); DlyLong();
+        SCL_L(); DlyLong();
+
+        uint8_t b = (uint8_t)(a << 1);
+        for (uint8_t i = 0; i < 8; i++) {
+            if (b & 0x80) SDA_H(); else SDA_L();
+            b <<= 1;
+            DlyLong();
+            SCL_H(); DlyLong();
+            SCL_L(); DlyLong();
+        }
+
+        SDA_H(); DlyLong();
+        SCL_H(); DlyLong();
+        uint8_t ack = (HAL_GPIO_ReadPin(PCA_SDA_PORT, PCA_SDA_PIN) == GPIO_PIN_RESET) ? 1 : 0;
+        SCL_L(); DlyLong();
+
+        SDA_L(); SCL_H(); DlyLong();
+        SDA_H(); DlyLong();
+
+        if (ack) return a;
+    }
+    return 0;
+}
+
+void PCA_Diag(void)
+{
+    GPIO_InitTypeDef g = {0};
+
+    PCA_GPIO_Init();
+
+    /* ① 输入+上拉：读空闲电平，正常两根都是 1 */
+    g.Mode = GPIO_MODE_INPUT;
+    g.Pull = GPIO_PULLUP;
+    g.Pin  = PCA_SCL_PIN;  HAL_GPIO_Init(PCA_SCL_PORT, &g);
+    g.Pin  = PCA_SDA_PIN;  HAL_GPIO_Init(PCA_SDA_PORT, &g);
+    HAL_Delay(2);
+    uint8_t sclHi = (HAL_GPIO_ReadPin(PCA_SCL_PORT, PCA_SCL_PIN) == GPIO_PIN_SET) ? 1 : 0;
+    uint8_t sdaHi = (HAL_GPIO_ReadPin(PCA_SDA_PORT, PCA_SDA_PIN) == GPIO_PIN_SET) ? 1 : 0;
+
+    /* ② 开漏：逐个拉低再读回，正常都应该读到 0 */
+    g.Mode  = GPIO_MODE_OUTPUT_OD;
+    g.Speed = GPIO_SPEED_FREQ_HIGH;
+    g.Pin   = PCA_SCL_PIN;  HAL_GPIO_Init(PCA_SCL_PORT, &g);
+    g.Pin   = PCA_SDA_PIN;  HAL_GPIO_Init(PCA_SDA_PORT, &g);
+
+    SCL_L(); HAL_Delay(1);
+    uint8_t sclOk = (HAL_GPIO_ReadPin(PCA_SCL_PORT, PCA_SCL_PIN) == GPIO_PIN_RESET) ? 1 : 0;
+    SCL_H();
+    SDA_L(); HAL_Delay(1);
+    uint8_t sdaOk = (HAL_GPIO_ReadPin(PCA_SDA_PORT, PCA_SDA_PIN) == GPIO_PIN_RESET) ? 1 : 0;
+    SDA_H();
+    HAL_Delay(1);
+
+    /* ③ 输入+下拉：判断"线对面到底有没有东西"
+          读到 1 = 外部有上拉（PCA 板活着且接上了）
+          读到 0 = 只有内部下拉在起作用 → 那根线对面是空的 */
+    g.Mode = GPIO_MODE_INPUT;
+    g.Pull = GPIO_PULLDOWN;
+    g.Pin  = PCA_SCL_PIN;  HAL_GPIO_Init(PCA_SCL_PORT, &g);
+    g.Pin  = PCA_SDA_PIN;  HAL_GPIO_Init(PCA_SDA_PORT, &g);
+    HAL_Delay(3);
+    uint8_t sclPd = (HAL_GPIO_ReadPin(PCA_SCL_PORT, PCA_SCL_PIN) == GPIO_PIN_SET) ? 1 : 0;
+    uint8_t sdaPd = (HAL_GPIO_ReadPin(PCA_SDA_PORT, PCA_SDA_PIN) == GPIO_PIN_SET) ? 1 : 0;
+
+    /* 恢复开漏，准备通信 */
+    g.Mode  = GPIO_MODE_OUTPUT_OD;
+    g.Speed = GPIO_SPEED_FREQ_HIGH;
+    g.Pin   = PCA_SCL_PIN;  HAL_GPIO_Init(PCA_SCL_PORT, &g);
+    g.Pin   = PCA_SDA_PIN;  HAL_GPIO_Init(PCA_SDA_PORT, &g);
+
+    /* ④ 快速扫描 0x40~0x78（PCA9685 的合法地址范围）*/
+    uint8_t found = 0;
+    for (uint8_t a = 0x40; a <= 0x78; a++) {
+        I2C_Start();
+        uint8_t ack = I2C_WriteByte((uint8_t)(a << 1));
+        I2C_Stop();
+        if (ack && found == 0) found = a;
+        PCA_Delay();
+    }
+
+    g_busScl   = (uint8_t)(sclHi * 10 + sclOk);   /* 正常 = 11 */
+    g_busSda   = (uint8_t)(sdaHi * 10 + sdaOk);   /* 正常 = 11 */
+    g_pdScl    = sclPd;                           /* 正常 = 1  */
+    g_pdSda    = sdaPd;                           /* 正常 = 1  */
+    g_scanAddr = found;                           /* 正常 = 64 (0x40) */
+
+    /* ⑤ 慢速再扫一遍（放在最后，耗时约 0.3 秒）*/
+    g_scanSlow = found ? found : PCA_ScanSlow();
+}
+
+/* ---------- ⑤-B 候选引脚扫描：找出"哪两个针上真的接了外部上拉" ---------- */
+typedef struct { GPIO_TypeDef* port; uint16_t pin; const char* name; } CAND_T;
+
+static const CAND_T g_cand[] = {
+    {GPIOB, GPIO_PIN_12, "B12"}, {GPIOB, GPIO_PIN_13, "B13"},
+    {GPIOB, GPIO_PIN_14, "B14"}, {GPIOB, GPIO_PIN_15, "B15"},
+    {GPIOF, GPIO_PIN_0,  "F0" }, {GPIOF, GPIO_PIN_1,  "F1" },
+    {GPIOE, GPIO_PIN_9,  "E9" }, {GPIOE, GPIO_PIN_11, "E11"},
+    {GPIOE, GPIO_PIN_13, "E13"}, {GPIOE, GPIO_PIN_14, "E14"},
+    {GPIOC, GPIO_PIN_6,  "C6" }, {GPIOI, GPIO_PIN_6,  "I6" },
+    {GPIOI, GPIO_PIN_7,  "I7" },
+};
+#define CAND_N  (sizeof(g_cand)/sizeof(g_cand[0]))
+
+char g_pinStr[80] = "none";      /* 扫到的引脚名，用逗号隔开 */
+
+void PIN_Scan(void)
+{
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOE_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+    __HAL_RCC_GPIOI_CLK_ENABLE();
+
+    GPIO_InitTypeDef g = {0};
+    g.Mode  = GPIO_MODE_INPUT;
+    g.Pull  = GPIO_PULLDOWN;        /* 内部下拉：外部有上拉的针才会读高 */
+    g.Speed = GPIO_SPEED_FREQ_LOW;
+
+    g_pinStr[0] = '\0';
+    uint8_t n = 0;
+
+    for (uint32_t i = 0; i < CAND_N; i++) {
+        g.Pin = g_cand[i].pin;
+        HAL_GPIO_Init(g_cand[i].port, &g);
+        HAL_Delay(2);
+        if (HAL_GPIO_ReadPin(g_cand[i].port, g_cand[i].pin) == GPIO_PIN_SET) {
+            if (n > 0) strncat(g_pinStr, ",", sizeof(g_pinStr) - strlen(g_pinStr) - 1);
+            strncat(g_pinStr, g_cand[i].name, sizeof(g_pinStr) - strlen(g_pinStr) - 1);
+            n++;
+        }
+    }
+    if (n == 0) strncpy(g_pinStr, "none", sizeof(g_pinStr) - 1);
+
+    /* 扫描把引脚都改成了输入，这里恢复 SDA/SCL 为开漏 */
+    PCA_GPIO_Init();
+}
+
+/* ---------- ⑥ 舵机输出 ---------- */
+/* 设脉宽，单位微秒。us=0 → 输出常低 = 无脉冲 = 舵机卸力 */
+void PCA_SetPulse(uint8_t ch, uint16_t us)
+{
+    uint8_t reg = (uint8_t)(PCA_LED0_ON_L + 4 * ch);
+    uint8_t buf[4];
+
+    if (us == 0) {                            /* 卸力：强制输出常低 */
+        buf[0] = 0x00; buf[1] = 0x00; buf[2] = 0x00; buf[3] = 0x10;
+    } else {
+        uint16_t off = (uint16_t)((uint32_t)us * 4096UL / 20000UL);  /* 50Hz→20ms */
+        if (off > 4095) off = 4095;
+        buf[0] = 0x00;                        /* ON_L  */
+        buf[1] = 0x00;                        /* ON_H  */
+        buf[2] = (uint8_t)(off & 0xFF);       /* OFF_L */
+        buf[3] = (uint8_t)(off >> 8);         /* OFF_H */
+    }
+    PCA_Write4(reg, buf);
+}
+
+/* 设角度 0~180° */
+void PCA_SetAngle(uint8_t ch, float angle)
+{
+    if (angle < 0.0f)   angle = 0.0f;
+    if (angle > 180.0f) angle = 180.0f;
+    uint16_t us = (uint16_t)(SERVO_US_MIN +
+                             (SERVO_US_MAX - SERVO_US_MIN) * angle / 180.0f);
+    PCA_SetPulse(ch, us);
+}
+
+/* 初始化：返回 1=成功通信 */
+uint8_t g_pcaMode1 = 0;
+
+uint8_t PCA_Init(void)
+{
+    PCA_GPIO_Init();
+
+    PCA_Write8(PCA_MODE1, 0x10);     /* ① 进 sleep（写 PRE_SCALE 必须先睡）*/
+    PCA_Write8(PCA_MODE2, 0x04);     /* ② 输出方式：推挽 */
+    PCA_Write8(PCA_PRESCALE, 121);   /* ③ 50Hz：25000000/(4096*50)-1 = 121 */
+    PCA_Write8(PCA_MODE1, 0xA1);     /* ④ 重启 + 自动递增 + 唤醒 */
+    HAL_Delay(3);                    /* 等内部振荡器稳定 */
+
+    for (uint8_t ch = 0; ch < 16; ch++) PCA_SetPulse(ch, 0);   /* 全部先卸力 */
+
+    g_pcaMode1 = PCA_Read8(PCA_MODE1);   /* ⑤ 回读验证 */
+    return (g_pcaMode1 == 0xA1 || g_pcaMode1 == 0x21) ? 1 : 0;
+}
 
 /* ========================================================================
  * BTS7960 四推杆（24V 全压）
@@ -533,6 +873,143 @@ void JackTask(void)
     JackApply();
 }
 
+/* ---------- ⑥ 机械臂：6 关节 ---------- */
+#define ARM_CH_NUM     6
+#define ARM_MAX_RATE   0.15f      /* 每 ms 最多 0.15° = 150°/s */
+#define STICK_DEADZONE 0.08f
+
+/* ★ 测试开关：1 = 6 个舵机持续慢速摆动（没接遥控器时用来验证接线）
+              0 = 正常模式（遥控器控制）*/
+#define ARM_TEST_SWEEP 0
+
+/* ★ 开机自检：1 = 上电时 6 个舵机各摆 ±12 度（台架验证接线用）
+ *              0 = 不摆（上车/比赛用：否则每次上电机械臂都会动，且阻塞约 1.7 s）*/
+#define ARM_SELFTEST_ON_BOOT  0
+
+/* 角度限位（装好后按实物调！现在是保守值）*/
+float armLimitMin[ARM_CH_NUM] = { 10, 20, 20, 30,   0,  0 };
+float armLimitMax[ARM_CH_NUM] = {170,160,160,150, 180, 70 };
+float armAngle[ARM_CH_NUM]    = { 90, 90, 90, 90,  90, 30 };
+
+static float Stick(float v)
+{
+    if (v >  1.0f) v =  1.0f;
+    if (v < -1.0f) v = -1.0f;
+    if (v > -STICK_DEADZONE && v < STICK_DEADZONE) return 0.0f;
+    return v;
+}
+
+/* 增量式点动：松杆 = 停在原地 */
+static void ArmJog(uint8_t ch, float rate)
+{
+    if (rate >  ARM_MAX_RATE) rate =  ARM_MAX_RATE;
+    if (rate < -ARM_MAX_RATE) rate = -ARM_MAX_RATE;
+
+    armAngle[ch] += rate;
+    if (armAngle[ch] < armLimitMin[ch]) armAngle[ch] = armLimitMin[ch];
+    if (armAngle[ch] > armLimitMax[ch]) armAngle[ch] = armLimitMax[ch];
+
+    
+}
+
+#if ARM_TEST_SWEEP
+/* 测试模式：6 个通道各自慢速正弦摆动，相位错开，方便逐个观察。
+ * 包在 #if 里是为了默认配置下不编译它 —— 否则 sinf() 会引入 libm 依赖，
+ * GCC/CMake 那条链没有链接 -lm。 */
+static void ArmTestSweep(void)
+{
+    static uint32_t t = 0;
+    t++;
+    for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+        float phase = (float)t * 0.0008f + (float)i * 0.7f;
+        float mid = (armLimitMin[i] + armLimitMax[i]) * 0.5f;
+        float amp = (armLimitMax[i] - armLimitMin[i]) * 0.25f;
+        armAngle[i] = mid + amp * sinf(phase);
+    }
+}
+#endif /* ARM_TEST_SWEEP */
+
+static void ArmControl(void)
+{
+#if ARM_TEST_SWEEP
+    ArmTestSweep();          /* 测试模式：忽略遥控器 */
+    return;
+#endif
+    RC_Info_t &rc = RemoteControl::rcInfo;
+
+    if (JackActive()) return;                   /* 爬台阶时机械臂不要动 */
+    if (rc.sRight == DOWN_POS) return;         /* 急停挡：不动 */
+
+    if (rc.sLeft == MID_POS) {                 /* 臂模式 1 */
+        ArmJog(0,  0.15f * Stick(rc.left_rol));   /* 底座  */
+        ArmJog(1, -0.08f * Stick(rc.left_col));   /* 大臂  */
+        ArmJog(2,  0.10f * Stick(rc.right_col));  /* 小臂  */
+        ArmJog(3,  0.12f * Stick(rc.right_rol));  /* 腕俯仰 */
+    } else if (rc.sLeft == DOWN_POS) {         /* 臂模式 2 */
+        ArmJog(4,  0.15f * Stick(rc.left_rol));   /* 腕旋转 */
+        ArmJog(5,  0.06f * Stick(rc.right_col));  /* 夹爪  */
+    }
+}
+
+/* 已经下发到硬件的角度（"变化才写"用）*/
+float armSent[ARM_CH_NUM] = { 90, 90, 90, 90, 90, 30 };
+
+/* 每 1ms 调用：只写 1 个通道，6ms 轮完一圈 */
+static void ArmFlushOne(void)
+{
+    static uint8_t ch = 0;
+
+    if (fabsf(armAngle[ch] - armSent[ch]) > 0.3f) {   /* 变化超过 0.3° 才写 */
+        PCA_SetAngle(ch, armAngle[ch]);
+        armSent[ch] = armAngle[ch];
+    }
+
+    ch++;
+    if (ch >= ARM_CH_NUM) ch = 0;
+}
+
+
+
+/* ---------- PCA 自愈：芯片被复位（SLEEP=1）就自动重新初始化 ---------- */
+uint8_t g_pcaRecover = 0;
+
+static void PCA_HealthCheck(void)
+{
+    uint8_t m1 = PCA_Read8(PCA_MODE1);
+
+    if (m1 & 0x10) {                      /* bit4 = SLEEP，说明芯片复位了 */
+        PCA_Init();                       /* 重新配置 PRE_SCALE / MODE1 */
+        for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+            PCA_SetAngle(i, armAngle[i]); /* 把所有通道恢复到当前角度 */
+            armSent[i] = -999.0f;         /* 强制下一步重新下发 */
+        }
+        g_pcaRecover++;                   /* 记录恢复次数，便于判断电源是否在抖 */
+    }
+}
+
+/* 急停：全部卸力 */
+static void ArmStopAll(void)
+{
+    for (uint8_t i = 0; i < ARM_CH_NUM; i++) PCA_SetPulse(i, 0);
+}
+
+#if ARM_SELFTEST_ON_BOOT
+/* 开机自检：不接遥控器也能验证 6 个舵机（默认不编译，见 ARM_SELFTEST_ON_BOOT）*/
+static void ArmSelfTest(void)
+{
+    for (uint8_t ch = 0; ch < ARM_CH_NUM; ch++) {
+        float base = armAngle[ch];
+        float amp  = 12.0f;
+        for (float a = base - amp; a <= base + amp; a += 2.0f) {
+            PCA_SetAngle(ch, a); HAL_IWDG_Refresh(&hiwdg); HAL_Delay(12);
+        }
+        for (float a = base + amp; a >= base; a -= 2.0f) {
+            PCA_SetAngle(ch, a); HAL_IWDG_Refresh(&hiwdg); HAL_Delay(12);
+        }
+        PCA_SetAngle(ch, base);
+    }
+}
+#endif /* ARM_SELFTEST_ON_BOOT */
 /***
  * 在这里放入xxx.stop()即可使舵机,电机在遥控器急停挡位断电
  */
@@ -553,6 +1030,26 @@ void UserStop()
  */
 void UserInit()
 {
+    /* ---- 机械臂 PCA9685 ----
+     * 顺序有讲究：PIN_Scan() 会把 PE9/11/13/14、PC6、PI6 临时改成输入来探测，
+     * 所以机械臂初始化（含引脚扫描）必须排在 JackPwmPins_Init() 之前，
+     * 否则推杆的 TIM1 PWM 复用功能会被扫描覆盖掉。 */
+    PIN_Scan();                     /* 扫出哪两个针上真的接了外部上拉 */
+    PCA_Diag();                     /* 总线自检：通信不通时先看 C 页的 bS/bD/pS/pD */
+    {
+        uint8_t pcaOk = PCA_Init();
+        if (pcaOk) {
+            for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+                PCA_SetAngle(i, armAngle[i]);   /* 先到初始姿态 */
+                HAL_Delay(5);
+            }
+#if ARM_SELFTEST_ON_BOOT
+            ArmSelfTest();
+#endif
+        }
+        /* pcaOk = 0 说明 I2C 没通 → C 页 pca= 不会是 33 */
+    }
+
     /* BTS7960 推杆初始化：必须放在 DBG_IMU_IDONLY 的 return 之前。 */
     JackPwmPins_Init();
     JackPwm_Init();
@@ -656,6 +1153,13 @@ static void AppendI(const char *name, int v)
 }
 
 
+/* 字符串字段：引脚扫描结果，前面自动加 pins= */
+static void AppendS(const char *s)
+{
+    uint32_t used = strlen(g_line);
+    snprintf(&g_line[used], sizeof(g_line) - used, "pins=%s ", s);
+}
+
 /* 给机构电机（UserMotor，ID5）设目标转速：单位 输出轴 rpm，正负 = 方向。
  * 由 ControlTask.cpp 的 CtrlHandle() 调用（左三档 SB 中位时，右摇杆控制）。
  * 注意：SetTargetSpeed 会清 stopFlag，所以这是“允许输出”的唯一开关；
@@ -667,15 +1171,37 @@ void UserSetSpeed(float _rpm)
 void UserHandle()
 {
     static uint32_t cnt = 0;
-    static uint8_t  page = 0;        // A/B 两页交替，避免一行太长被截断
+    static uint8_t  page = 0;        // A/B/C 三页轮播，避免一行太长被截断
+    static uint8_t  armEStop = 0;    // 机械臂急停锁存：只在跳变时卸一次力
 
     /* IMU 降频到 200Hz（每 5ms 读一次）：1ms 中断里做 SPI 太挤，且 200Hz 对姿态足够 */
     static uint32_t imuDiv = 0;
     if (!DBG_MINIMAL) { if (++imuDiv >= IMU_DIV) { imuDiv = 0; imuReadReq = 1; } }
 
+    /* ---- 机械臂 ----
+     * 急停判定必须放在这里，不能塞进 UserStop()：
+     * CtrlHandle() 在"正常驾驶"分支里每 1 ms 都调 UserStop()，
+     * 若 UserStop() 里写 ArmStopAll()，机械臂会被持续卸力、永远动不了。
+     * 这里改用跳变锁存，只在进入急停的那一刻写一次 6 个通道。 */
+    {
+        uint8_t estop;
+#if ARM_TEST_SWEEP
+        estop = 0;                       /* 台架摆动测试：忽略急停，否则没接遥控器就不动 */
+#else
+        estop = (RemoteControl::rcInfo.sRight == DOWN_POS) || !RemoteAlive();
+#endif
+        if (estop) {
+            if (!armEStop) { armEStop = 1; ArmStopAll(); }
+        } else {
+            armEStop = 0;
+            ArmControl();       // 先按摇杆算目标角（含限速 / 限位）
+            ArmFlushOne();      // 每 1 ms 只写 1 个通道，6 ms 轮完一圈
+        }
+    }
+
     JackTask();                     // BTS7960 推杆：SA 总开关 + SD 步进
 
-    if (++cnt >= 100) {              // 每 100ms 打一行，A/B 各 5 Hz
+    if (++cnt >= 100) {              // 每 100 ms 打一行，A/B/C 轮播，各约 3.3 Hz
         cnt = 0;
         g_line[0] = '\0';
 
@@ -726,7 +1252,7 @@ void UserHandle()
             AppendI("a2=", (int)(uint16_t)CMFR.feedback.angle);
             AppendI("a3=", (int)(uint16_t)CMBL.feedback.angle);
             AppendI("a4=", (int)(uint16_t)CMBR.feedback.angle);
-        } else {
+        } else if (page == 1) {
             /* ===== B 行：机构电机(M2006) 详情 + 四个底盘轮子 + 档位 ===== */
             AppendF2("m=",   UserMotor.state.speed);  // M2006 输出轴 rpm（反馈）
             AppendF2("tgt=", UserMotor.targetSpeed);  // M2006 目标 rpm
@@ -757,8 +1283,28 @@ void UserHandle()
             AppendI("q1=", (int)RemoteControl::rc_ctrl.rc.ch[1]);
             AppendI("q2=", (int)RemoteControl::rc_ctrl.rc.ch[2]);
             AppendI("q3=", (int)RemoteControl::rc_ctrl.rc.ch[3]);
+        } else {
+            /* ===== C 页：机械臂 + PCA9685 总线诊断 ===== */
+            /* ⚠ 本函数运行在 TIM10 的 1 ms 中断里。PCA_Init() 内部有 HAL_Delay(3)，
+             * 之所以不会死锁，是因为 stm32f4xx_hal_conf.h 的 TICK_INT_PRIORITY = 0，
+             * SysTick（优先级 0）能抢占 TIM10（优先级 9），tick 仍在走。
+             * 若以后把 TICK_INT_PRIORITY 调大，这里会变成死循环 —— 别动那个宏。 */
+            PCA_HealthCheck();                        /* 先自愈（SLEEP=1 说明芯片被复位过），再回读 */
+            AppendI("pca=",  (int)g_pcaMode1);        /* 正常 33 (0x21) = 醒着；161 (0xA1) 也可接受 */
+            AppendI("rcv=",  (int)g_pcaRecover);      /* 自愈次数：一直涨 = 供电在抖，要查线 */
+            AppendI("a0=",   (int)armAngle[0]);       /* 关节 0 目标角 */
+            AppendI("sent0=",(int)armSent[0]);       /* 已下发角：应紧跟 a0 */
+            AppendI("off0=", (int)PCA_ReadOff(0));    /* 回读 CH0 的 OFF 计数，应在 100~500 */
+            AppendI("m1=",   (int)PCA_Read8(PCA_MODE1));
+            AppendI("scan=", (int)g_scanAddr);        /* 正常 64 (0x40) */
+            AppendI("bS=",   (int)g_busScl);          /* 空闲电平+拉低回读，正常 11 */
+            AppendI("bD=",   (int)g_busSda);          /* 正常 11 */
+            AppendI("pS=",   (int)g_pdScl);           /* 内部下拉时读到外部上拉，正常 1 */
+            AppendI("pD=",   (int)g_pdSda);           /* 正常 1 */
+            AppendI("sc2=",  (int)g_scanSlow);        /* 慢扫，正常 64 */
+            AppendS(g_pinStr);                        /* 扫到的针，如 B13,B15 */
         }
-        page ^= 1;
+        page = (uint8_t)((page + 1) % 3);
         /* ★ 不许在这里调 UsbPrintf/CDC_Transmit_FS（实测会把 USB 控制传输搞死：
          * 设备能枚举、COM 口打不开）。这里只把拼好的行交给主循环去发。 */
         if (DBG_USB_PRINT && !g_txReady) {
