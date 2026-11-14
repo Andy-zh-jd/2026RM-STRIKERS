@@ -41,10 +41,22 @@ void CtrlHandle()
     }
 
     if (!JackActive()) {
-        /* 正常底盘：不再依赖 SB，右/左摇杆直接驾驶。 */
-        ChassisSetVelocity(rcDeadzone(RemoteControl::rcInfo.right_col) * 3.0f,
-                           -rcDeadzone(RemoteControl::rcInfo.right_rol) * 3.0f,
-                           -rcDeadzone(RemoteControl::rcInfo.left_rol) * 60.0f);
+        /* ===== 2026-11-14 修：操作机械臂时轮子跟着转 =====
+         * 原因：合并后的版本让底盘"不看 SB，摇杆直接驾驶"，而机械臂也用同一批摇杆
+         *       （SB 中档 → 底座/大臂/小臂/腕俯仰；SB 下档 → 腕旋转/夹爪）。
+         *       于是推杆操作机械臂时，底盘同时被同样的摇杆驱动 → 轮子跟着转。
+         * 修法：SB 当"模式开关"，两套执行机构互斥：
+         *       SB 上档(97)  = 驾驶模式：底盘动，机械臂不动
+         *       SB 中档(0)   = 机械臂模式 1：底盘强制停
+         *       SB 下档(158) = 机械臂模式 2：底盘强制停
+         * 机械臂那边（UserHandle→ArmControl）本来就是按 SB 中/下档分辨的，不用改。 */
+        if (RemoteControl::rcInfo.sLeft == UP_POS) {
+            ChassisSetVelocity(rcDeadzone(RemoteControl::rcInfo.right_col) * 3.0f,
+                               -rcDeadzone(RemoteControl::rcInfo.right_rol) * 3.0f,
+                               -rcDeadzone(RemoteControl::rcInfo.left_rol) * 60.0f);
+        } else {
+            ChassisStop();          /* SB 中/下 = 机械臂模式，底盘必须停 */
+        }
         UserStop();                 /* 推杆、M2006 全部停 */
         return;
     }
