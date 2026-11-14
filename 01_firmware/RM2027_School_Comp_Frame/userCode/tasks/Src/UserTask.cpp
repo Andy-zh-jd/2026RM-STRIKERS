@@ -535,9 +535,30 @@ void PCA_SetPulse(uint8_t ch, uint16_t us)
     PCA_Write4(reg, buf);
 }
 
-/* 设角度 0~180° */
+/* ===== 2026-11-13：舵机结构换向表 =====
+ *   +1 = 逻辑角与物理角同向
+ *   -1 = 反向：在**输出端**镜像（物理角 = 180 - 逻辑角）
+ *
+ * 为什么放在这里而不是改摇杆符号：
+ *   所有角度下发都经过 PCA_SetAngle()（初始姿态 / 自愈恢复 / 点动刷新 / 自检），
+ *   在这里镜像一次，全链路统一；armAngle[] 仍是"逻辑角"，臂控逻辑和限位都不用动。
+ *
+ * 以后任何舵机因结构改动换向，只改这一行对应的数。 */
+static const float ARM_DIR[16] = {
+    -1.0f,  /* ch0 底座：结构前后反转（本次换向）*/
+    +1.0f,  /* ch1 大臂 */
+    +1.0f,  /* ch2 小臂 */
+    +1.0f,  /* ch3 腕俯仰 */
+    +1.0f,  /* ch4 腕旋转 */
+    +1.0f,  /* ch5 夹爪 */
+    +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f
+};
+
+/* 设角度 0~180°（ARM_DIR = -1 的通道在输出端镜像） */
 void PCA_SetAngle(uint8_t ch, float angle)
 {
+    if (ch >= 16) return;
+    if (ARM_DIR[ch] < 0.0f) angle = 180.0f - angle;   /* 反向通道：物理角镜像 */
     if (angle < 0.0f)   angle = 0.0f;
     if (angle > 180.0f) angle = 180.0f;
     uint16_t us = (uint16_t)(SERVO_US_MIN +
