@@ -907,9 +907,11 @@ void JackTask(void)
  *              0 = 不摆（上车/比赛用：否则每次上电机械臂都会动，且阻塞约 1.7 s）*/
 #define ARM_SELFTEST_ON_BOOT  0
 
-/* 角度限位（装好后按实物调！现在是保守值）*/
-float armLimitMin[ARM_CH_NUM] = { 10, 20, 20, 30,   0,  0 };
-float armLimitMax[ARM_CH_NUM] = {170,160,160,150, 180, 70 };
+/* 角度限位（装好后按实物调！现在是保守值）
+ * 2026-11-14 实测：底座 ch0 的软件限位 10/170 正好等于机械行程两端 →
+ * 推到端部时舵机一直顶住结构（嗡嗡 + 抖动）。两端各收 10° 留余量。 */
+float armLimitMin[ARM_CH_NUM] = { 20, 20, 20, 30,   0,  0 };
+float armLimitMax[ARM_CH_NUM] = {160,160,160,150, 180, 70 };
 float armAngle[ARM_CH_NUM]    = { 90, 90, 90, 90,  90, 30 };
 
 static float Stick(float v)
@@ -1008,10 +1010,17 @@ static void PCA_HealthCheck(void)
     }
 }
 
-/* 急停：全部卸力 */
+/* 急停：全部卸力。
+ * ⚠ 2026-11-14 修的 bug：这里只把脉冲写 0，却没有让 armSent[] 失效。
+ *   于是急停解除后，ArmFlushOne() 只在"目标角变化 >0.3°"时才重发 → 没被推动过的
+ *   关节永远不会重新发脉冲 → 该关节一直是"软"的（真实踩到：一个关节死活没力）。
+ *   修法：卸力时把 armSent 置 -999，恢复后所有通道强制重发一次。 */
 static void ArmStopAll(void)
 {
-    for (uint8_t i = 0; i < ARM_CH_NUM; i++) PCA_SetPulse(i, 0);
+    for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+        PCA_SetPulse(i, 0);
+        armSent[i] = -999.0f;          /* 失效 → 下次 ArmFlushOne 必然重发 */
+    }
 }
 
 #if ARM_SELFTEST_ON_BOOT
@@ -1305,25 +1314,39 @@ void UserHandle()
             AppendI("q2=", (int)RemoteControl::rc_ctrl.rc.ch[2]);
             AppendI("q3=", (int)RemoteControl::rc_ctrl.rc.ch[3]);
         } else {
-            /* ===== C 页：机械臂 + PCA9685 总线诊断 ===== */
-            /* ⚠ 本函数运行在 TIM10 的 1 ms 中断里。PCA_Init() 内部有 HAL_Delay(3)，
-             * 之所以不会死锁，是因为 stm32f4xx_hal_conf.h 的 TICK_INT_PRIORITY = 0，
-             * SysTick（优先级 0）能抢占 TIM10（优先级 9），tick 仍在走。
-             * 若以后把 TICK_INT_PRIORITY 调大，这里会变成死循环 —— 别动那个宏。 */
-            PCA_HealthCheck();                        /* 先自愈（SLEEP=1 说明芯片被复位过），再回读 */
-            AppendI("pca=",  (int)g_pcaMode1);        /* 正常 33 (0x21) = 醒着；161 (0xA1) 也可接受 */
-            AppendI("rcv=",  (int)g_pcaRecover);      /* 自愈次数：一直涨 = 供电在抖，要查线 */
-            AppendI("a0=",   (int)armAngle[0]);       /* 关节 0 目标角 */
-            AppendI("sent0=",(int)armSent[0]);       /* 已下发角：应紧跟 a0 */
-            AppendI("off0=", (int)PCA_ReadOff(0));    /* 回读 CH0 的 OFF 计数，应在 100~500 */
-            AppendI("m1=",   (int)PCA_Read8(PCA_MODE1));
-            AppendI("scan=", (int)g_scanAddr);        /* 正常 64 (0x40) */
-            AppendI("bS=",   (int)g_busScl);          /* 空闲电平+拉低回读，正常 11 */
-            AppendI("bD=",   (int)g_busSda);          /* 正常 11 */
-            AppendI("pS=",   (int)g_pdScl);           /* 内部下拉时读到外部上拉，正常 1 */
-            AppendI("pD=",   (int)g_pdSda);           /* 正常 1 */
-            AppendI("sc2=",  (int)g_scanSlow);        /* 慢扫，正常 64 */
-            AppendS(g_pinStr);                        /* 扫到的针，如 B13,B15 */
+            /* ===== C 页：机械臂 6 个关节角（短行，肉眼看极限用）=====
+             * 2026-11-14：原来 C 页是长诊断行，现场看不清、也不方便标定限位。
+             * 改成：6 个关节角 + ch0 当前限位，每次 C 页都打（≈每 300 ms 一次）；
+             * 总线诊断（pca/off0/scan/bS/bD）每 10 次 C 页才打一次，保持短行。 */
+            PCA_HealthCheck();
+            for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+                char nm[4];
+                nm[0] = 'a'; nm[1] = (char)('0' + i); nm[2] = '='; nm[3] = '\0';
+                AppendI(nm, (int)armAngle[i]);
+            }
+            AppendI("l0=", (int)armLimitMin[0]);      /* ch0 下限（逻辑角）*/
+            AppendI("h0=", (int)armLimitMax[0]);      /* ch0 上限（逻辑角）*/
+            AppendI("rcv=", (int)g_pcaRecover);
+            /* 2026-11-14：轮显 6 个通道的 OFF 回读（每次页面只读 1 个，避免阻塞 1ms 中断）
+             *   o=0     → 该通道输出常低 = 卸力/没配脉冲（舵机必然是"软"的）
+             *   o≈100~500 → 正在输出 PWM（舵机会有力）*/
+            {
+                static uint8_t ocIdx = 0;
+                AppendI("oc=", (int)ocIdx);
+                AppendI("o=",  (int)PCA_ReadOff(ocIdx));
+                ocIdx = (uint8_t)((ocIdx + 1) % ARM_CH_NUM);
+            }
+            {
+                static uint8_t diagCnt = 0;
+                if (++diagCnt >= 10) {
+                    diagCnt = 0;
+                    AppendI("pca=",  (int)g_pcaMode1);
+                    AppendI("off0=", (int)PCA_ReadOff(0));
+                    AppendI("scan=", (int)g_scanAddr);
+                    AppendI("bS=",   (int)g_busScl);
+                    AppendI("bD=",   (int)g_busSda);
+                }
+            }
         }
         page = (uint8_t)((page + 1) % 3);
         /* ★ 不许在这里调 UsbPrintf/CDC_Transmit_FS（实测会把 USB 控制传输搞死：
