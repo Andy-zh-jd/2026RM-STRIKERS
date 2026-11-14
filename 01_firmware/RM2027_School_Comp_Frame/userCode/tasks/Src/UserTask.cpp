@@ -896,8 +896,21 @@ void JackTask(void)
 
 /* ---------- ⑥ 机械臂：6 关节 ---------- */
 #define ARM_CH_NUM     6
-#define ARM_MAX_RATE   0.15f      /* 每 ms 最多 0.15° = 150°/s */
+#define ARM_MAX_RATE   0.15f      /* 每 ms 最多 0.15° = 150°/s（硬上限）*/
 #define STICK_DEADZONE 0.08f
+
+/* ===== 2026-11-14：每关节点动速率表（°/ms，满杆）=====
+ * 为什么需要：舵机扭矩固定，**动得越快、启动冲击越大**，齿轮越容易扫。
+ * 大臂 ch1 在「夹着矿石抬升」时扭矩不足、空转发烫（齿轮打滑）→ 降到 0.04（原 0.08）。
+ * ⚠️ 降速只能减小冲击和发热，**不能增加扭矩**；根本解决还要靠减力臂 / 加弹簧 / 换金属齿舵机。*/
+static const float armRate[ARM_CH_NUM] = {
+    0.15f,  /* ch0 底座   */
+    0.04f,  /* ch1 大臂   ← 夹矿抬升会打滑，减半 */
+    0.10f,  /* ch2 小臂   */
+    0.12f,  /* ch3 腕俯仰 */
+    0.15f,  /* ch4 腕旋转 */
+    0.06f   /* ch5 夹爪   */
+};
 
 /* ★ 测试开关：1 = 6 个舵机持续慢速摆动（没接遥控器时用来验证接线）
               0 = 正常模式（遥控器控制）*/
@@ -964,13 +977,13 @@ static void ArmControl(void)
     if (rc.sRight == DOWN_POS) return;         /* 急停挡：不动 */
 
     if (rc.sLeft == MID_POS) {                 /* 臂模式 1 */
-        ArmJog(0,  0.15f * Stick(rc.left_rol));   /* 底座  */
-        ArmJog(1, -0.08f * Stick(rc.left_col));   /* 大臂  */
-        ArmJog(2,  0.10f * Stick(rc.right_col));  /* 小臂  */
-        ArmJog(3,  0.12f * Stick(rc.right_rol));  /* 腕俯仰 */
+        ArmJog(0,  armRate[0] * Stick(rc.left_rol));    /* 底座（左摇杆横向）*/
+        ArmJog(1, -armRate[1] * Stick(rc.left_col));    /* 大臂（左摇杆纵向）*/
+        ArmJog(2,  armRate[2] * Stick(rc.right_col));   /* 小臂（右摇杆纵向）*/
+        ArmJog(3,  armRate[3] * Stick(rc.right_rol));   /* 腕俯仰（右摇杆横向）*/
     } else if (rc.sLeft == DOWN_POS) {         /* 臂模式 2 */
-        ArmJog(4,  0.15f * Stick(rc.left_rol));   /* 腕旋转 */
-        ArmJog(5,  0.06f * Stick(rc.right_col));  /* 夹爪  */
+        ArmJog(4, armRate[4] * Stick(rc.left_rol));     /* 腕旋转 */
+        ArmJog(5, armRate[5] * Stick(rc.right_col));    /* 夹爪   */
     }
 }
 
