@@ -38,7 +38,14 @@ void MX_CAN1_Init(void)
   hcan1.Init.TimeSeg1 = CAN_BS1_10TQ;
   hcan1.Init.TimeSeg2 = CAN_BS2_3TQ;
   hcan1.Init.TimeTriggeredMode = DISABLE;
-  hcan1.Init.AutoBusOff = DISABLE;
+  /* 2026-11-17 实测踩坑：原来 AutoBusOff=DISABLE，一旦 CAN 总线没人 ACK
+   * （典型场景：C 板先由 ST-Link/USB 上电启动、24V 后上，电调还没起来；
+   *  或 CAN 线临时断开），发送错误计数 TEC 涨到 248 → **bus-off 锁死**，
+   *  而且不自动恢复 —— 之后 24V 上电、电调正常回传，但四轮永远收不到指令，
+   *  表现就是"上电后轮子一点反应都没有"，只能整机复位才能恢复。
+   * 改成 ENABLE：硬件在 bus-off 后约 1.4ms（128×11 位）自动恢复，
+   * 电调一上电就能重新通信。 */
+  hcan1.Init.AutoBusOff = ENABLE;
   hcan1.Init.AutoWakeUp = DISABLE;
   hcan1.Init.AutoRetransmission = DISABLE;
   hcan1.Init.ReceiveFifoLocked = DISABLE;
@@ -60,7 +67,7 @@ void MX_CAN2_Init(void)
   hcan2.Init.TimeSeg1 = CAN_BS1_10TQ;
   hcan2.Init.TimeSeg2 = CAN_BS2_3TQ;
   hcan2.Init.TimeTriggeredMode = DISABLE;
-  hcan2.Init.AutoBusOff = DISABLE;
+  hcan2.Init.AutoBusOff = ENABLE;      /* 同上：bus-off 自动恢复，避免永久锁死 */
   hcan2.Init.AutoWakeUp = DISABLE;
   hcan2.Init.AutoRetransmission = DISABLE;
   hcan2.Init.ReceiveFifoLocked = DISABLE;

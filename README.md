@@ -114,6 +114,9 @@ M3 那次"横移原地打转 + 摩擦声"的真正原因是：**电调被其他�
 4. **进驾驶模式后手转车体 90°**，看 A 页 `yaw=` 是否跟着变、`im=1`；或直接跑 `python tools\imu_axis_check.py` 让它自动判定 yaw 轴/符号并把结果写进 `logs\imu_axis_*.csv`。
    如果 `CHASSIS_IMU_YAW_EN=1`，还必须先按 `03_docs/底盘高速侧移-诊断与修正.md` §3.2/§3.3 确认 yaw 轴/正方向。
    轴/符号错时航向锁会变成正反馈 → **先把 `CHASSIS_IMU_YAW_EN` 改回 0 再开车**。
+5. **遥控/摇杆值正常但轮子不转** → 先查 CAN1 是否 bus-off（`ESR` BOFF/TEC、`TSR` TME 全满）：
+   只接 ST-Link/USB 给板子上电时电调没 ACK，旧固件会 bus-off 锁死（2026-11-17 踩过）；
+   新固件已开 `AutoBusOff`，会自动恢复。更稳的上电顺序：**先上 24V，再插/复位 ST-Link**。
 
 ## 已验证的硬件基线
 
