@@ -193,6 +193,10 @@ extern volatile uint8_t chassisImuOk;
 /* 航向锁误差（°，已折到 ±180），打印/SWD/日志用 */
 float ChassisYawErrDeg(void);
 
+/* 2026-11-17：静止判定（1 = 四轮无目标、无转速，已连续 1.5 s）
+ * 给 IMU 陀螺零偏自动学习用：只有真静止才学习，搬车/推车时不能学。 */
+uint8_t ChassisIsStationary(void);
+
 /* 2026-10-23：四个轮子的**目标**转速（输出轴 rpm），供串口打印/调试用。
  * 下标：0=左前(CMFL,ID1) 1=右前(CMFR,ID2) 2=左后(CMBL,ID3) 3=右后(CMBR,ID4) */
 extern float wheelTargetRpm[4];

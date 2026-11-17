@@ -119,6 +119,29 @@ static float WheelRpmBody(uint8_t idx)
     }
 }
 
+/* ===================== 2026-11-17：静止判定（给 IMU 零偏自动学习用） =====================
+ * 判据：四个轮子**目标≈0** 且**实测转速≈0**，并且连续 1.5 s。1 kHz 调用。
+ * 为什么要"目标≈0"：如果车被顶住/卡住，驾驶员还压着杆，轮速可能为 0 但车其实在使劲，
+ * 这时陀螺可能有振动，不该学零偏。 */
+static uint16_t stationCnt = 0;        /* 连续静止的毫秒数（饱和到 60000） */
+
+static void StationaryUpdate(void)
+{
+    uint8_t still = 1;
+    for (uint8_t i = 0; i < 4; i++) {
+        if (fabsf(wheelTargetRpm[i]) > 0.5f) { still = 0; break; }
+        if (fabsf(WheelRpmBody(i)) > 3.0f)   { still = 0; break; }
+    }
+    if (!still) { stationCnt = 0; return; }
+    if (stationCnt < 60000u) stationCnt++;
+}
+
+uint8_t ChassisIsStationary(void)
+{
+    return (uint8_t)(stationCnt >= 1500u);   /* 1 ms 周期 → 1.5 s */
+}
+
+
 /* 每 20 ms 采一帧（分频在 ChassisHandle 里做）。
  * 只在"车在动"时记录，否则静止 20 秒就把 1024 帧缓冲占满了。 */
 static void WheelLogSample(void)
@@ -198,6 +221,9 @@ void ChassisHandle() {
     CMFR.Handle();
     CMBL.Handle();
     CMBR.Handle();
+
+    /* 2026-11-17：静止判定（放在电机 Handle 之后，用本周期最新的实测转速） */
+    StationaryUpdate();
 
     /* 车载日志：1 kHz 分频到 50 Hz */
     static uint8_t logDiv = 0;

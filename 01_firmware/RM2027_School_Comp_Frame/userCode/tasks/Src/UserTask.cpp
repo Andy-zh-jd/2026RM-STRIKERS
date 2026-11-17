@@ -183,6 +183,9 @@ float g_gyroLpf[3] = {0};
  * 底盘航向锁必须立刻退出，而不是拿着几秒前的角速度继续算。 */
 volatile uint32_t g_imuLastTick = 0;
 
+/* 2026-11-17：IMU 读次数定义在后面 UserPollSlow() 附近；这里提前声明给"静止零偏学习"用 */
+extern uint32_t g_imuReadCount;
+
 static void IMU_Update(void)
 {
     if (g_spiErr >= IMU_MAX_FAILS) return;   /* IMU 已判死：不再尝试，绝不拖累 1ms 中断 */
@@ -197,6 +200,28 @@ static void IMU_Update(void)
     g_accel[0] = (int16_t)((b[1] << 8) | b[0]);
     g_accel[1] = (int16_t)((b[3] << 8) | b[2]);
     g_accel[2] = (int16_t)((b[5] << 8) | b[4]);
+
+    /* ===== 2026-11-17：静止零偏自动学习 =====
+     * 为什么：上电标定只能消掉"那一刻"的零偏；温漂/残余零偏（约 0.1 °/s）在长跑里会积成几度航向。
+     * 三个条件都满足才学（防止把真实转动学进零偏）：
+     *   1) 车确实静止：ChassisIsStationary() = 四轮无目标、无转速，连续 1.5 s
+     *   2) 三轴滤波后角速度都很小（|°/s| < 1）—— 排除"车停着但被人慢慢转"
+     *   3) 已经过 100 次周期读 —— 避开启动瞬间
+     * 学习率：1 kHz 下 τ≈1.2 s；单次误差限幅 ±30 LSB（±1.8 °/s），不会跳变。 */
+    if (g_imuReadCount > 100u && ChassisIsStationary()) {
+        uint8_t quiet = 1;
+        for (int i = 0; i < 3; i++) {
+            if (g_gyroLpf[i] > 1.0f || g_gyroLpf[i] < -1.0f) { quiet = 0; break; }
+        }
+        if (quiet) {
+            for (int i = 0; i < 3; i++) {
+                float diff = (float)g_gyro[i] - g_gyroBias[i];
+                if (diff >  30.0f) diff =  30.0f;
+                if (diff < -30.0f) diff = -30.0f;
+                g_gyroBias[i] += diff * 0.0008f;
+            }
+        }
+    }
 
     for (int i = 0; i < 3; i++) {
         g_gyroDps[i] = ((float)g_gyro[i] - g_gyroBias[i]) / GYRO_SEN;      // 去零偏
@@ -1137,6 +1162,18 @@ void UserInit()
     IMU_WriteReg(1, 0x40, 0xA8);   // ACC_CONF: 正常模式，ODR 800Hz
     IMU_WriteReg(1, 0x41, 0x00);   // ACC_RANGE: ±3g
     HAL_Delay(50);                 // 等第一次采样完成
+
+    /* ---- 2b. 陀螺仪配置（2026-11-17 新增）----
+     * 原来只配了加速度计，陀螺一直在用复位默认值：2000 Hz ODR / 532 Hz 滤波。
+     * 带宽太大 → 静止时原始噪声大（实测 ±8 °/s 级尖峰）、软件滤波后仍有 ±1.5 °/s 抖动、
+     * 开机标定残余零偏约 0.1 °/s（15 s 航向漂 1.7°）。
+     * 降到 **400 Hz ODR / 116 Hz 数字低通**后，噪声约降一半；对 1 kHz 读取没有影响
+     * （同一采样会被读 2~3 次，软件 17 Hz 低通照常工作）。
+     * 量程 ±2000 °/s（与 GYRO_SEN=16.384 LSB/°/s 对应），显式写一遍防止被意外改掉。 */
+    IMU_WriteReg(0, 0x0F, 0x00);   // GYRO_RANGE: ±2000 °/s
+    IMU_WriteReg(0, 0x11, 0x00);   // GYRO_LPM1: normal mode（默认就是，显式写防意外）
+    IMU_WriteReg(0, 0x10, 0x02);   // GYRO_BANDWIDTH: 0x02 = 400 Hz ODR / 116 Hz 低通
+    HAL_Delay(50);                 // 等新配置生效
 
     /* ---- 3. 读 ID 存档（顺便复查模式切换没被打断）---- */
     g_accelId = IMU_ReadReg(1, 0x00);
