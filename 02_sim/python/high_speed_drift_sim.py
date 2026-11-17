@@ -30,6 +30,11 @@ WheelsSpeedCalc() 的六层结构，在仿真里一行一行照抄（同样是 1
       ./sim_out/expB_saturation.{png,csv}
       ./sim_out/expC_traction_limit.{png,csv}
       ./sim_out/expD_yaw_gain.{png,csv}
+
+⚠️ 本仿真**不含整车质量**：控制链是"运动学 + 轮速动力学"（无打滑动力学、无质量/惯量项），
+   所以 10 kg 还是 18 kg 结果完全一样；麦轮抓地上限 a=μg 也与质量无关，
+   侧向加速度限制参数不用随质量改。质量只影响**电流/扭矩预算**——
+   见 mecanum_pid_sim.py 顶部的 MASS_KG（2026-11-17 按实车 10 kg）。
 """
 
 import os
