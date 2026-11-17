@@ -73,6 +73,7 @@ cd 02_sim\python; python high_speed_drift_sim.py     # 2026-11-16 新增：高�
 python tools\read_log.py            # 汇总：跟踪率/航向漂移/横向偏移/归一化
 python tools\read_log.py --raw      # CSV
 python tools\read_swd.py -n 20      # 直接读 g_dbg（航向锁/归一化观察点）
+python tools\imu_axis_check.py --seconds 120 --rate 20   # IMU yaw 轴/符号台架确认（转车体 90°×2）
 ```
 
 ## 里程碑真实进度（截至 2026-11-02）
@@ -110,7 +111,7 @@ M3 那次"横移原地打转 + 摩擦声"的真正原因是：**电调被其他�
 **2026-11-16 起还要加两步（IMU 参与控制后）：**
 
 3. **上电后约 2 秒内别碰车**：外设初始化之后 `UserInit()` 里 IMU 标定 500 次（约 1.1 s），动了零偏就错。
-4. **进驾驶模式后手转车体 90°**，看 A 页 `yaw=` 是否跟着变、`im=1`。
+4. **进驾驶模式后手转车体 90°**，看 A 页 `yaw=` 是否跟着变、`im=1`；或直接跑 `python tools\imu_axis_check.py` 让它自动判定 yaw 轴/符号并把结果写进 `logs\imu_axis_*.csv`。
    如果 `CHASSIS_IMU_YAW_EN=1`，还必须先按 `03_docs/底盘高速侧移-诊断与修正.md` §3.2/§3.3 确认 yaw 轴/正方向。
    轴/符号错时航向锁会变成正反馈 → **先把 `CHASSIS_IMU_YAW_EN` 改回 0 再开车**。
 
