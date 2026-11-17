@@ -33,7 +33,7 @@ import time
 from pyocd.core.helpers import ConnectHelper
 
 NAMES = ["tgt", "rpm", "cur", "stop", "vbat", "sL", "sR", "col",
-         "r1", "r2", "r3", "r4", "t1", "t2", "t3", "t4",
+         "r1", "r2", "r3", "r4", "cstop", "ctgt", "rx203", "rxother",
          "yaw", "yawerr", "scale", "omega", "yawcorr", "vx", "vy", "imu"]
 NDBG = len(NAMES)
 
@@ -87,15 +87,16 @@ def main():
             v = [t.read32(addr + 4 * k) for k in range(NDBG)]
             v = [x - (1 << 32) if x >= (1 << 31) else x for x in v]
             d = dict(zip(NAMES, v))
-            print("M2006 tgt%7.2f m%7.2f st%d | t1%7.2f t2%7.2f t3%7.2f t4%7.2f | "
+            print("M2006 tgt%7.2f m%7.2f st%d | "
                   "r1%7.2f r2%7.2f r3%7.2f r4%7.2f | vbat%6.2f sL%3d sR%3d col%5.2f"
                   % (d["tgt"] / 100, d["rpm"] / 100, d["stop"],
-                     d["t1"] / 100, d["t2"] / 100, d["t3"] / 100, d["t4"] / 100,
                      d["r1"] / 100, d["r2"] / 100, d["r3"] / 100, d["r4"] / 100,
                      d["vbat"] / 100, d["sL"], d["sR"], d["col"] / 100))
-            print("          底盘: yaw%8.2f° err%7.2f° scale%6.3f ωeff%7.3f "
-                  "yawCorr%7.3f vx%6.2f vy%6.2f imu%d"
-                  % (d["yaw"] / 100, d["yawerr"] / 100, d["scale"] / 1000,
+            print("          底盘: cstop%d ctgt%7.2f rx203%5d rxOth%5d | "
+                  "yaw%8.2f° err%7.2f° scale%6.3f ωeff%7.3f yawCorr%7.3f "
+                  "vx%6.2f vy%6.2f imu%d"
+                  % (d["cstop"], d["ctgt"] / 100, d["rx203"], d["rxother"],
+                     d["yaw"] / 100, d["yawerr"] / 100, d["scale"] / 1000,
                      d["omega"] / 1000, d["yawcorr"] / 1000,
                      d["vx"] / 100, d["vy"] / 100, d["imu"]))
         t.resume()
