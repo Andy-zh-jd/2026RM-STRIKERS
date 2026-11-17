@@ -40,4 +40,13 @@ void    PCA_Diag(void);      /* 总线自检：结果打进 C 页 bS/bD/pS/pD/sc
 void    PIN_Scan(void);      /* 候选引脚扫描：结果打进 C 页 pins= */
 /* 慢任务：在主循环 while(1) 里调用（放 IMU 的 SPI 读，避免拖死中断） */
 void UserPollSlow(void);
+
+/* ---- 2026-11-16：IMU 数据接口（底盘航向锁用）----
+ * IMU_Ready(): 1 = 陀螺仪/加速度计 ID 正确、SPI 没连续失败、且 50 ms 内有过新数据。
+ *              底盘航向锁只在它为 1 时才参与控制；为 0 自动退回旧行为（不会把车带偏）。
+ * g_gyroLpf[]: 三轴角速度（已去零偏 + 一阶低通，单位 °/s），下标 0=gx 1=gy 2=gz。
+ *              车体 yaw 轴是哪个、正方向对不对，要按文档在台架上确认；
+ *              底盘侧用 CHASSIS_IMU_YAW_AXIS / CHASSIS_IMU_YAW_SIGN 两个宏选择。 */
+uint8_t IMU_Ready(void);
+extern float g_gyroLpf[3];
 #endif //RM_FRAME_C_USERTASK_H

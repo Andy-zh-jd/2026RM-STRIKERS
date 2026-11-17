@@ -8,11 +8,17 @@
     python tools\\read_swd.py -n 5            # 读 5 次
     python tools\\read_swd.py -a 0x20002700   # 手动指定地址（板上跑的是旧固件时用）
 
-固件侧约定（UserTask.cpp 的 UserHandle，16 个槽）：
+固件侧约定（UserTask.cpp 的 UserHandle，24 个槽）：
+  --- 旧 16 槽（机构 + 底盘基础）---
   [0] tgt 机构目标 rpm×100   [1] rpm 机构实测 rpm×100  [2] cur 电流原值  [3] stop
   [4] vbat×100              [5] sL  [6] sR  [7] col×100
   [8..11] r1..r4 底盘四轮 rpm×100   [12] 底盘 stopFlag  [13] 底盘目标 rpm×100
   [14] rx203 = 收到多少 0x203 帧（ID3 电调）  [15] rxOther = 其它 ID 的帧数
+  --- 2026-11-16 新增 8 槽（底盘运动控制）---
+  [16] 陀螺积分航向 °×100     [17] 航向锁误差 °×100
+  [18] 饱和归一化比例 ×1000   [19] 实际下发 ω rad/s×1000
+  [20] 航向环修正 rad/s×1000  [21] 实际下发 vx m/s×100
+  [22] 实际下发 vy m/s×100    [23] IMU_Ready()（1=可用）
 
 ⚠️ 改代码后 g_dbg 地址会变：必须重新用 nm 查（本脚本已自动做）。
    arm-none-eabi-nm -C build\\RM_Frame_C.elf | findstr " g_dbg$"
@@ -27,7 +33,9 @@ import time
 from pyocd.core.helpers import ConnectHelper
 
 NAMES = ["tgt", "rpm", "cur", "stop", "vbat", "sL", "sR", "col",
-         "r1", "r2", "r3", "r4", "t1", "t2", "t3", "t4"]
+         "r1", "r2", "r3", "r4", "t1", "t2", "t3", "t4",
+         "yaw", "yawerr", "scale", "omega", "yawcorr", "vx", "vy", "imu"]
+NDBG = len(NAMES)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ELF = os.path.join(ROOT, "01_firmware", "RM2027_School_Comp_Frame", "build", "RM_Frame_C.elf")
@@ -76,7 +84,7 @@ def main():
             t.resume()
             time.sleep(0.5)
             t.halt()
-            v = [t.read32(addr + 4 * k) for k in range(16)]
+            v = [t.read32(addr + 4 * k) for k in range(NDBG)]
             v = [x - (1 << 32) if x >= (1 << 31) else x for x in v]
             d = dict(zip(NAMES, v))
             print("M2006 tgt%7.2f m%7.2f st%d | t1%7.2f t2%7.2f t3%7.2f t4%7.2f | "
@@ -85,10 +93,14 @@ def main():
                      d["t1"] / 100, d["t2"] / 100, d["t3"] / 100, d["t4"] / 100,
                      d["r1"] / 100, d["r2"] / 100, d["r3"] / 100, d["r4"] / 100,
                      d["vbat"] / 100, d["sL"], d["sR"], d["col"] / 100))
+            print("          底盘: yaw%8.2f° err%7.2f° scale%6.3f ωeff%7.3f "
+                  "yawCorr%7.3f vx%6.2f vy%6.2f imu%d"
+                  % (d["yaw"] / 100, d["yawerr"] / 100, d["scale"] / 1000,
+                     d["omega"] / 1000, d["yawcorr"] / 1000,
+                     d["vx"] / 100, d["vy"] / 100, d["imu"]))
         t.resume()
         print("[+] 已恢复运行")
 
 
 if __name__ == "__main__":
     main()
-

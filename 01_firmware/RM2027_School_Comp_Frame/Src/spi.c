@@ -38,7 +38,11 @@ void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+  /* 2026-11-16：256 → 32。SPI1 在 APB2=84 MHz：
+   *   256 分频 = 328 kHz，读 6 字节约 0.2 ms（IMU 在 1 kHz 周期里根本读不及）；
+   *   32  分频 = 2.625 MHz，读一次约 50 µs。BMI088 的 SPI 上限 10 MHz，安全。
+   * ⚠️ 这是 CubeMX 生成的文件，重新生成 .ioc 会覆盖这行 —— 改完记得检查。 */
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;

@@ -24,11 +24,19 @@ extern volatile uint32_t g_rx203, g_rxOther;
  *   最小模式下 USB 正常 → 说明是某个阻塞外设（最可能是 SPI 读 IMU 超时）拖死了 1ms 中断。
  * DBG_UART = 1 → 同一行数据同时从 UART1（PA9=TX，115200）发出去，USB 挂了也能用 CH340 看。
  *   ⚠️ HAL_UART_Transmit 是阻塞的（60 字节≈5ms），塞进 1ms 中断会拖垮 USB 控制传输，默认关。 */
-#define DBG_MINIMAL 1/* 1 = IMU 只读一次 chip id 然后彻底不读（体检用）*/
-#define DBG_IMU_IDONLY 1
-/* IMU 周期读取的分频：1ms 中断里每 IMU_DIV 次读一次
- *   IMU_DIV=100 → 10Hz（T1 测试）；5 → 200Hz（最终目标）；1 → 1kHz（之前会卡死）*/
-#define IMU_DIV 5
+/* 2026-11-16：**打开 IMU**（底盘高速跑偏修正需要陀螺仪）。
+ * 为什么现在敢开：10-23 已定位到当年的 USB 问题是「在 1ms 中断里发 USB」，
+ *   后来改成"中断拼字符串、主循环发送"，并且 IMU 的 SPI 读也放在主循环；
+ *   SysTick 优先级已提到 0（HAL 超时在中断里有效）。
+ * 配套：spi.c 的 SPI1 分频已从 256 改成 32（328 kHz → 2.6 MHz），单次读 ~50 µs。
+ * 如果上电后 COM 口又打不开：先把 DBG_MINIMAL 改回 1（会退回不读 IMU 的旧行为）。 */
+#define DBG_MINIMAL 0/* 1 = IMU 只读一次 chip id 然后彻底不读（体检用）*/
+#define DBG_IMU_IDONLY 0
+/* IMU 周期读取的分频：主循环里执行，每 IMU_DIV 毫秒读一次。
+ * 2026-11-16：从 5（200 Hz）改成 1（1 kHz）——航向锁要的是"最新角速度"，
+ * 200 Hz 的 5 ms 保持 + 5 ms 传输会带来最多 ~10 ms 的相位滞后。
+ * 主循环空闲（while(1) 只做 UserPollSlow），2.6 MHz SPI 读一次约 50 µs，占用 ~5%。 */
+#define IMU_DIV 1
 #define DBG_UART    0
 /* 2026-10-23 实测结论：**不能在 1ms 中断里调用 CDC_Transmit_FS**。
  * 现象：设备能枚举（COM 口在、PnP 正常），但打开永远报
@@ -170,6 +178,11 @@ void IMU_Calibrate(void)
 
 float g_gyroLpf[3] = {0};
 
+/* 2026-11-16：最近一次**成功**读 IMU 的时刻（HAL_GetTick 单位）。
+ * 给 IMU_Ready() 判"数据是不是新鲜的"：主循环被卡住/传感器死掉时，
+ * 底盘航向锁必须立刻退出，而不是拿着几秒前的角速度继续算。 */
+volatile uint32_t g_imuLastTick = 0;
+
 static void IMU_Update(void)
 {
     if (g_spiErr >= IMU_MAX_FAILS) return;   /* IMU 已判死：不再尝试，绝不拖累 1ms 中断 */
@@ -191,6 +204,9 @@ static void IMU_Update(void)
                      + g_gyroDps[i] * (1.0f - GYRO_LPF);                    // 低通
         g_accelG[i]  = (float)g_accel[i] / ACC_SEN;
     }
+
+    /* 2026-11-16：刷新"IMU 数据新鲜度"时间戳（IMU_Ready 用） */
+    g_imuLastTick = HAL_GetTick();
 }
 
 
@@ -1168,8 +1184,23 @@ void UserPollSlow(void)
     }
 }
 
-/* SWD 快照区：8 个 int32，见 UserHandle 里的赋值说明 */
-volatile int32_t g_dbg[16];
+/* 2026-11-16：给底盘航向锁用的 IMU 健康判断（全部条件都为真才算可用）：
+ *   1) 芯片 ID 对（加速度计 0x1E / 陀螺仪 0x0F）—— 防止根本没接/没初始化
+ *   2) SPI 没有连续失败（g_spiErr 到 IMU_MAX_FAILS 就判死，见 IMU_Update）
+ *   3) 50 ms 内有新数据 —— 主循环被卡住时陀螺数据会变"旧"，此时宁可不用
+ * 任意一条不满足 → 底盘自动退回"无航向锁"的旧行为，绝不用坏数据控车。 */
+uint8_t IMU_Ready(void)
+{
+    if (g_gyroId != 0x0F || g_accelId != 0x1E) return 0;
+    if (g_spiErr >= IMU_MAX_FAILS) return 0;
+    if ((uint32_t)(HAL_GetTick() - g_imuLastTick) > 50u) return 0;
+    return 1;
+}
+
+/* SWD 快照区：24 个 int32，见 UserHandle 里的赋值说明。
+ * 2026-11-16：从 16 扩到 24，给底盘运动控制（航向锁/归一化）加了 8 个观察点，
+ * 用 tools/read_swd.py 直接读 RAM，绕开 USB。 */
+volatile int32_t g_dbg[24];
 
 /* 调试打印看哪个电机：
  *   M2006 + C610  → UserMotor（ID5，0x1FF 帧，反馈 0x205，减速比 36）
@@ -1273,6 +1304,20 @@ void UserHandle()
         g_dbg[14] = (int32_t)g_rx203;
         g_dbg[15] = (int32_t)g_rxOther;
 
+        /* ===== 2026-11-16：底盘运动控制观察点（给 read_swd.py / 调参用）=====
+         * [16] 陀螺积分航向 °×100      [17] 航向锁误差 °×100
+         * [18] 饱和归一化比例 ×1000    [19] 实际下发 ω rad/s×1000
+         * [20] 航向环修正 rad/s×1000   [21] 实际下发 vx m/s×100
+         * [22] 实际下发 vy m/s×100     [23] IMU_Ready()（1=可用） */
+        g_dbg[16] = (int32_t)(chassisYawDeg * 100.0f);
+        g_dbg[17] = (int32_t)(ChassisYawErrDeg() * 100.0f);
+        g_dbg[18] = (int32_t)(chassisDesatScale * 1000.0f);
+        g_dbg[19] = (int32_t)(chassisOmegaEff * 1000.0f);
+        g_dbg[20] = (int32_t)(chassisYawCorr * 1000.0f);
+        g_dbg[21] = (int32_t)(chassisDbgVx * 100.0f);
+        g_dbg[22] = (int32_t)(chassisDbgVy * 100.0f);
+        g_dbg[23] = (int32_t)chassisImuOk;
+
         if (page == 0) {
             /* ===== A 行：姿态 + 电池电压 ===== */
             AppendF2("gx=", g_gyroLpf[0]);       // 陀螺 °/s（滤波后）
@@ -1286,6 +1331,11 @@ void UserHandle()
             AppendI("serr=", (int)g_spiErr);      // SPI 连续失败计数
             AppendI("icnt=", (int)g_imuReadCount); // 主循环里实际读了多少次
             AppendF2("vbat=", vccBat);           // 电池电压（换算可疑，用万用表对）
+            /* 2026-11-16：IMU 航向锁自检用。手转车体 90°：
+             *   yaw 应该跟着变约 90；gx/gy/gz 里变化最大的那个轴就是 yaw 轴。
+             *   im=1 表示 IMU 数据健康（底盘航向锁才会真正参与控制）。 */
+            AppendF2("yaw=", chassisYawDeg);
+            AppendI("im=", (int)chassisImuOk);
             /* 2026-10-23：四路电调的**转子角度**（0~8191，C620 反馈帧原始值）。
              * 作用：区分"没收到帧"和"收到帧但电机不转"——
              *   a_n 一直是 0        → 这个 ID 没有反馈帧（CAN/供电/ID 问题）
