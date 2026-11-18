@@ -11,6 +11,14 @@ RC_ctrl_t RemoteControl::rc_ctrl;
 
 uint8_t RemoteControl::sbus_rx_buf[2][SBUS_RX_BUF_NUM];
 
+/* 最后一次收到"合法"帧的时刻（HAL_GetTick 单位），给 RemoteAlive() 用 */
+volatile uint32_t rc_last_tick = 0;
+
+uint8_t RemoteAlive(void)
+{
+    return (uint8_t)((HAL_GetTick() - rc_last_tick) < 100u);
+}
+
 void RemoteControl::init() {
     //enable the DMA transfer for the receiver request
     //使能 DMA 串口接收
@@ -46,6 +54,17 @@ void RemoteControl::init() {
 
 
 void RemoteControl::sbus_to_rc(const volatile uint8_t *sbus_buf) {
+    /* ===== 2026-11-03 审计修复：拒绝"全 0 帧" =====
+     * 接收机没通电/没对码时，USART3 上会收到 25 个 0x00（长度正好等于 RC_FRAME_LENGTH）。
+     * 这种帧解析出来是：ch 全 0 → right_col = (0-1024)/671 = -1.52、两个开关 = 0 = 中位。
+     * 结果：底盘用 -1.52 算出速度、机械臂按"中档 + 满杆"开始点动 —— 没人碰车它自己动。
+     * 修法：整帧全 0 直接丢弃，也不更新 rc_last_tick（于是 RemoteAlive() 判离线）。 */
+    {
+        uint8_t any = 0;
+        for (uint8_t i = 0; i < RC_FRAME_LENGTH; ++i) any |= sbus_buf[i];
+        if (any == 0) return;
+    }
+
     rc_ctrl.rc.ch[0] = (sbus_buf[1] | sbus_buf[2] << 8) & 0x07ff;       // Channel 1
     rc_ctrl.rc.ch[1] = (sbus_buf[2] >> 3 | sbus_buf[3] << 5) & 0x07ff;  // Channel 2
     rc_ctrl.rc.ch[2] = (sbus_buf[3] >> 6 | sbus_buf[4] << 2 | sbus_buf[5] << 10) &
@@ -68,6 +87,7 @@ void RemoteControl::sbus_to_rc(const volatile uint8_t *sbus_buf) {
     rcInfo.sRight = (SWITCH_STATE_E)rc_ctrl.rc.s[1];
     rcInfo.optional[0] = rc_ctrl.rc.optional[0];
     rcInfo.optional[1] = rc_ctrl.rc.optional[1];
+    rc_last_tick = HAL_GetTick();       /* 标记：遥控在线（供 RemoteAlive() 判定） */
 
 }
 void RemoteControl::ITHandle() {

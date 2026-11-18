@@ -4,29 +4,39 @@
 #include "ChassisTask.h"
 
 PID_Regulator_t pidRegulator = {//此为储存pid参数的结构体，四个底盘电机共用
-        .kp = 60,
+        /* 2026-11-03 审计修复：和主线 01_firmware 的**实测最终值**对齐。
+         *   kp 60 → 120        ：60 是第一次台架单电机时的值，落地跟踪只有 88~90%
+         *   ki 保持 0           ：纯 P 有静差，但现阶段够用；要加就从 ki=0.05 / kiMax=1500 起
+         *   outputMax 16384→12000：满量程 16384 = 20 A/电机，四轮 80 A，
+         *                          **超过电池架 35 A 持续上限** → 会掉压/触发保护。
+         *                          12000 ≈ 14.6 A/电机。不够时先修供电/助跑，别直接调大。 */
+        .kp = 120,
         .ki = 0,
         .kd = 0,
         .componentKpMax = 16384,
         .componentKiMax = 0,
         .componentKdMax = 0,
-        .outputMax = 16384 //3508电机输出电流上限，可以调小，勿调大
+        .outputMax = 12000
 };
 
 MOTOR_INIT_t chassisMotorInit = {//四个底盘电机共用的初始化结构体
         .speedPIDp = &pidRegulator,
         .anglePIDp = nullptr,
         ._motorID = MOTOR_ID_1,
-        .reductionRatio = 19.0f,
+        .reductionRatio = 19.2032f,   /* 官方 3591/187（原 19.0 差 1.07%）*/
         .ctrlType = SPEED_Single,
 };
-Motor CMFL(MOTOR_ID_1,&chassisMotorInit);//定义左前轮电机
-Motor CMFR(MOTOR_ID_2,&chassisMotorInit);//定义右前轮电机
-Motor CMBL(MOTOR_ID_3,&chassisMotorInit);//定义左后轮电机
-Motor CMBR(MOTOR_ID_4,&chassisMotorInit);//定义右后轮电机
+/* 2026-11-03 审计修复：绑定改成实测表（见 ChassisTask.h 里的 ID_WHEEL_*）*/
+Motor CMFL(ID_WHEEL_FL,&chassisMotorInit);//左前轮
+Motor CMFR(ID_WHEEL_FR,&chassisMotorInit);//右前轮
+Motor CMBL(ID_WHEEL_BL,&chassisMotorInit);//左后轮
+Motor CMBR(ID_WHEEL_BR,&chassisMotorInit);//右后轮
 
 uint8_t ChassisStopFlag = 1;
 float FBVelocity,LRVelocity,RTVelocity;
+
+/* 四个轮子目标转速（输出轴 rpm），WheelsSpeedCalc 写、串口打印读 */
+float wheelTargetRpm[4] = {0};
 
 void ChassisStart(){
 
@@ -61,6 +71,8 @@ void ChassisSetVelocity(float _fbV,float _lrV,float _rtV){
  */
 void ChassisStop(){
     ChassisStopFlag = 1;
+    /* 目标清零：否则串口里 t1~t4 会一直显示上一次的速度，分不清"没下发"和"下发了没转" */
+    for (uint8_t i = 0; i < 4; ++i) wheelTargetRpm[i] = 0;
     CMFL.Stop();
     CMFR.Stop();
     CMBL.Stop();
@@ -93,9 +105,16 @@ void WheelsSpeedCalc(float fbVelocity, float lrVelocity, float rtVelocity) {
     CMFRSpeed = CMFRSpeed /(WHEEL_DIAMETER/2.0f);
     CMBLSpeed = CMBLSpeed /(WHEEL_DIAMETER/2.0f);
     CMBRSpeed = CMBRSpeed /(WHEEL_DIAMETER/2.0f);
-    //控制底盘电机转速
-    CMFL.SetTargetSpeed(RADpS2RPM(CMFLSpeed));
-    CMFR.SetTargetSpeed(RADpS2RPM(CMFRSpeed));
-    CMBL.SetTargetSpeed(RADpS2RPM(CMBLSpeed));
-    CMBR.SetTargetSpeed(RADpS2RPM(CMBRSpeed));
+
+    /* 2026-11-03：先存成"输出轴 rpm"给遥测（t1~t4），再乘方向补偿下发 */
+    wheelTargetRpm[0] = RADpS2RPM(CMFLSpeed);
+    wheelTargetRpm[1] = RADpS2RPM(CMFRSpeed);
+    wheelTargetRpm[2] = RADpS2RPM(CMBLSpeed);
+    wheelTargetRpm[3] = RADpS2RPM(CMBRSpeed);
+
+    //控制底盘电机转速（乘方向补偿：+1 = 车前进方向）
+    CMFL.SetTargetSpeed(wheelTargetRpm[0] * SIGN_WHEEL_FL);
+    CMFR.SetTargetSpeed(wheelTargetRpm[1] * SIGN_WHEEL_FR);
+    CMBL.SetTargetSpeed(wheelTargetRpm[2] * SIGN_WHEEL_BL);
+    CMBR.SetTargetSpeed(wheelTargetRpm[3] * SIGN_WHEEL_BR);
 }

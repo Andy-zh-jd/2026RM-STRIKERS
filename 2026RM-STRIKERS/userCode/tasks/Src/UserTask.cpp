@@ -3,10 +3,18 @@
 //
 #include "UserTask.h"
 #include "RemoteControl.h"
+#include "ChassisTask.h"   /* 2026-11-03：底盘遥测要读 wheelTargetRpm / ChassisStopFlag / SIGN_WHEEL_* */
 #include "tim.h"
 #include <stdio.h>
 #include <stdarg.h>
 extern volatile uint8_t key_raw_state;
+
+/* 底盘四个电机对象定义在 ChassisTask.cpp，这里只引用（遥测用） */
+extern Motor CMFL, CMFR, CMBL, CMBR;
+/* Device.cpp 里的电池电压；换算系数(/22*222)未经万用表核对，只看趋势 */
+extern volatile float vccBat;
+/* ControlTask.cpp 里的急停/离线锁存（1=锁存中） */
+extern uint8_t g_stopLatch;
 
 /* Jack / BTS7960 mode, defined later in this file. */
 static bool ClimbMode(void);
@@ -574,6 +582,8 @@ static void ArmControl(void)
 #endif
     RC_Info_t &rc = RemoteControl::rcInfo;
 
+    /* 2026-11-03：遥控离线时 rcInfo 是旧值，不能再按它点动关节 */
+    if (!RemoteAlive()) return;
     if (ClimbMode()) return;                   /* 爬台阶时机械臂不要动 */
     if (rc.sRight == DOWN_POS) return;         /* 急停挡：不动 */
 
@@ -612,6 +622,16 @@ uint8_t g_pcaRecover = 0;
 
 static void PCA_HealthCheck(void)
 {
+    /* 2026-11-03 审计修复：总线不通时这里会**每帧都失败**，而它在 1ms 中断里跑，
+     * PCA_Init() 里带 HAL_Delay(3) + 22 次软件 I2C 写 ≈ 10~15 ms。
+     * 实测（11-02 串口）：打印频率从 10 Hz 掉到 8.7 Hz，说明每个打印周期
+     * （约 115 ms）就有一次 15 ms 的中断阻塞，排在后面的 Motor::CANPackageSend()
+     * 被一起推迟 —— 电调指令出现周期性 15 ms 空档。所以限成 2 秒最多试一次。 */
+    static uint32_t lastHealMs = 0;
+    uint32_t now = HAL_GetTick();
+    if ((uint32_t)(now - lastHealMs) < 2000u) return;
+    lastHealMs = now;
+
     uint8_t m1 = PCA_Read8(PCA_MODE1);
 
     if (m1 & 0x10) {                      /* bit4 = SLEEP，说明芯片复位了 */
@@ -655,9 +675,12 @@ static void ArmSelfTest(void)
 /* ========================================================================
  * BTS7960 jack control (merged with the existing IMU/arm code)
  *
- * SA  = optional[0] : climb enable, > 1000 = climb mode
- * SD  = optional[1] : pair select,  > 1000 = front pair, else rear pair
+ * SA  = optional[0] : climb enable, >= RC_SWITCH_HIGH(1400) = climb mode
+ * SD  = optional[1] : pair select,  >= RC_SWITCH_HIGH(1400) = front pair, else rear pair
  * SC  = sRight      : UP = extend, MID = retract, DOWN = emergency
+ *
+ * ⚠ 2026-11-03：原来这两处都写 `> 1000`，但原始 11 bit 通道**中位就是 1024**，
+ *   "没配置的通道"默认也输出中位 → 永久判成"高"。见 RemoteControl.h 的说明。
  *
  * Front BTS: PE9/PE11 (TIM1_CH1/CH2)
  * Rear  BTS: PE13/PE14 (TIM1_CH3/CH4)
@@ -704,12 +727,17 @@ static JackPair jackRear = {
 
 static bool ClimbMode(void)
 {
-    return RemoteControl::rcInfo.optional[0] > 1000;
+    /* 2026-11-03 审计修复：原来是 `> 1000`，而原始 11 bit 通道的中位就是 1024
+     * → 三位开关停中档、或该通道在发射机上没配置（默认输出中位）时，
+     *   底盘被永久 ChassisStop()、机械臂在 ArmControl() 第一行就 return。
+     * 阈值定义在 RemoteControl.h（1400），换发射机后先看串口 op0= 实测值。 */
+    return RemoteControl::rcInfo.optional[0] >= RC_SWITCH_HIGH;
 }
 
 static bool FrontPairSelected(void)
 {
-    return RemoteControl::rcInfo.optional[1] > 1000;
+    /* 同上：> 1000 会把中位(1024)/未配置通道判成"高"，统一用 RC_SWITCH_HIGH */
+    return RemoteControl::rcInfo.optional[1] >= RC_SWITCH_HIGH;
 }
 
 static void JackPwmPins_Init(void)
@@ -917,8 +945,10 @@ void UserInit()
  * 用户自定义任务主循环
  */
 
-/* ---------- 拼行缓冲区：攒够一整行再一次性发 ---------- */
-static char g_line[192];
+/* ---------- 拼行缓冲区：攒够一整行再一次性发 ----------
+ * 2026-11-03：192 → 256。A 页加了 op0/op1/cm 三个字段后原长度会顶到 192 的边，
+ * snprintf 会静默截断（看起来像"少了几个字段"，很容易误判）。 */
+static char g_line[256];
 
 static void AppendF2(const char *name, float v)
 {
@@ -948,6 +978,7 @@ static void AppendS(const char *s)
 void UserHandle()
 {
     static uint32_t cnt = 0;
+    static uint8_t  page = 0;        /* 2026-11-03：A/B 两页轮播 */
 
     IMU_Update();                    // 1kHz 采样
     ArmControl();                    // ★ 加这一行：机械臂控制 + 限速
@@ -957,29 +988,61 @@ void UserHandle()
     if (++cnt >= 100) {
         cnt = 0;
         g_line[0] = '\0';
-        /* ---- 机械臂状态 ---- */
-        AppendI("s1=",   (int32_t)(RemoteControl::rcInfo.right_rol * 100));  /* 右摇杆横 */
-        AppendI("s2=",   (int32_t)(RemoteControl::rcInfo.left_col  * 100));  /* 左摇杆竖 */
-        AppendI("s3=",   (int32_t)(RemoteControl::rcInfo.right_col * 100));  /* 右摇杆竖 */
-        AppendI("s4=",   (int32_t)(RemoteControl::rcInfo.left_rol  * 100));  /* 左摇杆横 */
-        AppendI("mL=",   (int32_t)RemoteControl::rcInfo.sLeft);   /* 左拨杆 */
-        AppendI("mR=",   (int32_t)RemoteControl::rcInfo.sRight);  /* 右拨杆：158=急停！*/
-        AppendI("rl=",   (int32_t)g_rcLen);              /* 遥控帧长：0=没收到 25=SBUS 18=DBUS */
-        AppendI("pca=",  (int32_t)g_pcaMode1);          /* ← 加这行 */
-        AppendI("bS=",   (int32_t)g_busScl);            /* 正常 11 */
-        AppendI("bD=",   (int32_t)g_busSda);            /* 正常 11 */
-        AppendI("scan=", (int32_t)g_scanAddr);          /* 正常 64 */
-        AppendI("pS=",   (int32_t)g_pdScl);             /* 正常 1 */
-        AppendI("pD=",   (int32_t)g_pdSda);             /* 正常 1 */
-        AppendI("sc2=",  (int32_t)g_scanSlow);          /* 慢扫，正常 64 */
-        AppendS(g_pinStr);                              /* ★ 扫到的针，如 B13,F1 */
-        AppendI("a0=",   (int32_t)armAngle[0]);
-        AppendI("sent0=",(int32_t)armSent[0]);          /* ← 看下发有没有跟上 */
-        PCA_HealthCheck();                             /* ★ 自愈检查 */
-        AppendI("off0=", (int32_t)PCA_ReadOff(0));      /* 回读 CH0 的 OFF 计数，应在 100~500 */
-        AppendI("rcv=",  (int32_t)g_pcaRecover);        /* 恢复次数，一直涨说明电源在抖 */
-        AppendI("m1=",   (int32_t)PCA_Read8(PCA_MODE1));/* 应 33(0x21)：SLEEP=0 说明芯片醒着 */
-        // ... 你原来的打印 ...
+
+        /* ===== 2026-11-03：A/B 两页轮播 =====
+         * A 页 = 遥控 + 机械臂 + I2C 总线自检
+         * B 页 = 底盘四轮（目标 / 回读 / CAN 反馈角度）+ 安全态 + 电池
+         * 原来只有 A 页，底盘一条数据都没有 —— 出故障时只能靠猜"是没下发还是没转"。 */
+        if (page == 0) {
+            /* ---------- A 页：遥控 + 机械臂 + I2C ---------- */
+            AppendI("s1=",   (int32_t)(RemoteControl::rcInfo.right_rol * 100));  /* 右摇杆横 */
+            AppendI("s2=",   (int32_t)(RemoteControl::rcInfo.left_col  * 100));  /* 左摇杆竖 */
+            AppendI("s3=",   (int32_t)(RemoteControl::rcInfo.right_col * 100));  /* 右摇杆竖 */
+            AppendI("s4=",   (int32_t)(RemoteControl::rcInfo.left_rol  * 100));  /* 左摇杆横 */
+            AppendI("mL=",   (int32_t)RemoteControl::rcInfo.sLeft);   /* 左拨杆 97上/0中/158下 */
+            AppendI("mR=",   (int32_t)RemoteControl::rcInfo.sRight);  /* 右拨杆 158=急停 */
+            AppendI("rl=",   (int32_t)g_rcLen);              /* 帧长：0=没收到 25=SBUS 18=DBUS */
+            AppendI("op0=",  (int32_t)RemoteControl::rcInfo.optional[0]); /* ch7 原始值(SA)，中位 1024 */
+            AppendI("op1=",  (int32_t)RemoteControl::rcInfo.optional[1]); /* ch8 原始值(SD)，中位 1024 */
+            AppendI("cm=",   ClimbMode() ? 1 : 0);           /* 1=被判成爬台阶模式（底盘/机械臂都会停）*/
+            AppendI("pca=",  (int32_t)g_pcaMode1);           /* 正常 33(0x21) 或 161(0xA1)；255=总线不通 */
+            AppendI("bS=",   (int32_t)g_busScl);             /* 空闲电平+拉低回读，正常 11 */
+            AppendI("bD=",   (int32_t)g_busSda);             /* 正常 11 */
+            AppendI("scan=", (int32_t)g_scanAddr);           /* 正常 64 */
+            AppendI("pS=",   (int32_t)g_pdScl);              /* 内部下拉时读到外部上拉，正常 1 */
+            AppendI("pD=",   (int32_t)g_pdSda);              /* 正常 1（=0 说明线没接/模块没供电）*/
+            AppendI("sc2=",  (int32_t)g_scanSlow);           /* 慢扫 */
+            AppendS(g_pinStr);                               /* 扫到有外部上拉的针 */
+            AppendI("a0=",   (int32_t)armAngle[0]);
+            AppendI("sent0=",(int32_t)armSent[0]);           /* 看下发有没有跟上 */
+            PCA_HealthCheck();                               /* 自愈检查（已限频到 2 s/次）*/
+            AppendI("off0=", (int32_t)PCA_ReadOff(0));       /* 回读 CH0 的 OFF 计数，应在 100~500 */
+            AppendI("rcv=",  (int32_t)g_pcaRecover);         /* 恢复次数，一直涨说明总线/供电有问题 */
+            AppendI("m1=",   (int32_t)PCA_Read8(PCA_MODE1)); /* 应 33(0x21)：SLEEP=0 说明芯片醒着 */
+            AppendI("stp=",  (int32_t)g_stopLatch);          /* 1=急停/离线锁存中（CtrlHandle 里的）*/
+        } else {
+            /* ---------- B 页：底盘四轮 ----------
+             * 判读方法：
+             *   t 全是 0.00          → 指令没下发（看 A 页 mL/mR/op0）
+             *   t 有数、r 一直 0      → 指令下发了电机没转（a 手转轮子看有没有变 → CAN/ID/供电）
+             *   t 和 r 同号且都有数   → 正常在转 */
+            AppendF2("t1=", wheelTargetRpm[0]);              /* 目标，输出轴 rpm，左前 */
+            AppendF2("t2=", wheelTargetRpm[1]);              /* 右前 */
+            AppendF2("t3=", wheelTargetRpm[2]);              /* 左后 */
+            AppendF2("t4=", wheelTargetRpm[3]);              /* 右后 */
+            AppendF2("r1=", CMFL.state.speed * SIGN_WHEEL_FL);   /* 回读（乘方向补偿，和 t 同坐标系）*/
+            AppendF2("r2=", CMFR.state.speed * SIGN_WHEEL_FR);
+            AppendF2("r3=", CMBL.state.speed * SIGN_WHEEL_BL);
+            AppendF2("r4=", CMBR.state.speed * SIGN_WHEEL_BR);
+            AppendI("a1=",  (int32_t)(uint16_t)CMFL.feedback.angle);  /* 转子角度 0~8191：手转轮子会变=帧在到 */
+            AppendI("a2=",  (int32_t)(uint16_t)CMFR.feedback.angle);
+            AppendI("a3=",  (int32_t)(uint16_t)CMBL.feedback.angle);
+            AppendI("a4=",  (int32_t)(uint16_t)CMBR.feedback.angle);
+            AppendI("csf=", (int32_t)ChassisStopFlag);       /* 0=允许输出 1=安全态 */
+            AppendI("um=",  (int32_t)UserMotor.stopFlag);    /* 机构电机 M2006 的 stopFlag */
+            AppendF2("vbat=", vccBat);                       /* 只有 USB≈4.1，6S≈26 */
+        }
+        page = (uint8_t)((page + 1) & 1u);
         UsbPrintf("%s\r\n", g_line);
     }
 

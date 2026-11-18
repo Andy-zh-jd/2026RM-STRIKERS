@@ -74,4 +74,15 @@ extern void USART3_IRQHandler(void);
 extern volatile uint32_t rc_last_tick;
 uint8_t RemoteAlive(void);
 
+/* ===== 2026-11-03 审计修复：开关通道的"上档"判据 =====
+ * optional[0]/optional[1] 是**原始 11 bit**（0~2047），中位就是 1024。
+ * 原来 JackActive() 写 `> 1000`，问题两个：
+ *   ① 中位 1024 > 1000 → 三位开关停中档就被判成"爬台阶"；
+ *   ② 发射机上**没配置**的通道默认输出中位 → 永久判成"爬台阶"。
+ * 后果（11-02 实车实测）：底盘一直 ChassisStop()、机械臂在 ArmControl() 第一行 return，
+ * 串口里却完全看不出来（当时没打印 optional[]）。
+ * 1400 = 中位 1024 + 376，只认明确拨到上档的值（三位开关上档≈1684 / 两位≈1684~2047）。
+ * ⚠ 换发射机后先看串口 op0=/op1= 的实测值再决定要不要动这个数。 */
+#define RC_SWITCH_HIGH      1400
+
 #endif //RM_FRAME_C_REMOTECONTROL_H
