@@ -20,6 +20,15 @@ _串口抓包.txt
 
 tmp_*.sh
 
-# ?????
+# 杂项脚本
 /fix.sh
 /tmp_*.sh
+
+# macOS 缩略图缓存
+.DS_Store
+**/.DS_Store
+
+# 串口录制 / 调试备份：体积大（单个 tsv 可达数 MB），不入库
+logs/*.tsv
+logs/*.patch
+logs/.armcheck/
