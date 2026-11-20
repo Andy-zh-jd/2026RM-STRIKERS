@@ -995,9 +995,15 @@ static const float armRate[ARM_CH_NUM] = {
 /* 角度限位（装好后按实物调！现在是保守值）
  * 2026-11-14 实测：底座 ch0 的软件限位 10/170 正好等于机械行程两端 →
  * 推到端部时舵机一直顶住结构（嗡嗡 + 抖动）。两端各收 10° 留余量。 */
-float armLimitMin[ARM_CH_NUM] = { 20, 20, 20, 30,   0,   0 };
-float armLimitMax[ARM_CH_NUM] = {160,160,160,150,  70, 180 };   /* [4]=夹爪70 [5]=腕旋转180（对调）*/
-float armAngle[ARM_CH_NUM]    = { 90, 90, 90, 90,  30, 90 };    /* [4]夹爪30张开 [5]腕旋转90 */
+/* 2026-11-20：按台架上亲手调的数值（原样搬过来，未改动）。
+ *                      CH0  CH1  CH2  CH3   CH4(夹爪) CH5(腕旋转)
+ * ⚠ 两点提醒：
+ *   ① CH4 夹爪 30~30 = **区间为 0** → 夹爪不会动。如果这不是本意，
+ *      把 armLimitMax[4] 放宽（75 / 120 / 150 都行）。
+ *   ② CH1 大臂上限 170：你之前说这颗的机械行程只到 105°，超了会顶住结构。*/
+float armLimitMin[ARM_CH_NUM] = {  2, -8,  0, 40,  30,  30 };
+float armLimitMax[ARM_CH_NUM] = {178,170, 90,150,  30,  75 };
+float armAngle[ARM_CH_NUM]    = {110, 90, 45, 90,  30,  30 };   /* 上电姿态 */
 
 static float Stick(float v)
 {
@@ -1034,7 +1040,7 @@ static void ArmJog(uint8_t ch, float rate)
 
 static const float armParkAngle[ARM_CH_NUM] = {
     /* CH0  CH1  CH2  CH3   CH4(夹爪) CH5(腕旋转) */
-        90,  90,  90,  90,   30,       90
+       110,  90,  45,  90,   30,       30
 };
 
 /* 往目标姿态限速逼近（不是瞬间跳过去 —— 那样电流冲击大、结构也会"哐"一下）*/
@@ -1098,7 +1104,7 @@ static void ArmControl(void)
 }
 
 /* 已经下发到硬件的角度（"变化才写"用）*/
-float armSent[ARM_CH_NUM] = { 90, 90, 90, 90, 30, 90 };   /* [4]夹爪30 [5]腕旋转90（对调）*/
+float armSent[ARM_CH_NUM] = {110, 90, 45, 90, 30, 30 };   /* 与 armAngle 初值一致 */
 
 /* 每 1ms 调用：只写 1 个通道，6ms 轮完一圈 */
 static void ArmFlushOne(void)
