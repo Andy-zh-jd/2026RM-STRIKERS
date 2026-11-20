@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """备份 / 核对车上固件（整片 STM32F407 flash 读回）。
 
+✅ 2026-11-20 已在实机验证：成功读回车上 C 板固件（App 区 128KB）并完成对比/版本串扫描。
+
 为什么（2026-11-18）：车上固件可能和仓库不一致（本地改过、没提交/推送），
 **烧录前先把它整片读回来存档**，以后任何时候都能恢复；读回时还会自动扫描
 固件里的 "RM2027_C ..." 版本串，确认板上跑的到底是哪一版。
@@ -87,12 +89,12 @@ def main():
     ap.add_argument("--no-compare", action="store_true", help="不和 build/RM_Frame_C.bin 对比")
     ap.add_argument("--full", action="store_true", help="整片读 1 MB（默认只读前 128 KB App 区）")
     ap.add_argument("--size", default="", help="自定义读取大小，如 0x30000（十六进制）")
+    args = ap.parse_args()
 
     size = FLASH_SIZE_FULL if args.full else FLASH_SIZE_APP
     if args.size:
         size = int(args.size, 0)
     size = (size + CHUNK - 1) // CHUNK * CHUNK
-    args = ap.parse_args()
 
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     out = args.out or os.path.join(ROOT, "backups", "RM_Frame_C_oncar_%s.hex" % stamp)
