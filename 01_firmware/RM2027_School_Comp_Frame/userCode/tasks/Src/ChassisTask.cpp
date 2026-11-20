@@ -327,6 +327,13 @@ void WheelsSpeedCalc(float fbVelocity, float lrVelocity, float rtVelocity) {
     slewVx = vx; slewVy = vy; slewW = w;
 #endif
     vx = slewVx; vy = slewVy; w = slewW;
+    /* ================= ⑦ 横移前后偏移交叉补偿（标定值，默认 0） =================
+     * 纯横移时前向理论分量应为 0，但麦轮辊子摩擦/装配不对称会产生与 vy 成正比的
+     * 纵向漂移（实测 10~20%）。给 vx 叠加上 -K·vy 抵消它：
+     *   K>0 = 向左平移（vy>0）时车会向前漂；向右平移 vy 变号 → 自动反向补偿。
+     * 标定方法见 ChassisTask.h 的 CHASSIS_STRAFE_FB_COMP 注释（需要卷尺量 2 m）。 */
+    vx -= CHASSIS_STRAFE_FB_COMP * vy;
+
     float vmagSlew = sqrtf(vx * vx + vy * vy);   /* 平移速度大小（后面两处都要用） */
 
     /* ================= ② IMU 直行航向锁 =================
