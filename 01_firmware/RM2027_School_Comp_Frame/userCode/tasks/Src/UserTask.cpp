@@ -18,6 +18,19 @@ extern Motor CMFL, CMFR, CMBL, CMBR;
 /* 2026-10-23 诊断计数（定义在 Motor.cpp 的 CAN 接收中断里） */
 extern volatile uint32_t g_rx203, g_rxOther;
 
+/* ===== 固件版本标识（2026-11-20） =====
+ * 为什么：车上固件可能和仓库不一致（队友本地改过、没提交/没推送）。
+ * 规则：**每次烧录前**更新下面的 TAG，并把 git commit 记到 03_docs/实测记录.md。
+ * 读取：tools/backup_firmware.py 把板上固件读回来，会自动扫出 "RM2027_C ..." 版本串；
+ *       也可以按 ELF 符号 g_fwVersion 直接用 SWD 读字符串。 */
+#define FW_VERSION_TAG "2026-11-20 CAN-fix + strafe-deadzone"
+extern "C" {
+__attribute__((used)) volatile const char g_fwVersion[] =
+    "RM2027_C " FW_VERSION_TAG " (" __DATE__ " " __TIME__ ")";
+}
+/* 只用来引用版本串首字节，防止 -Wl,--gc-sections 把上面这段只读数据整个丢掉 */
+volatile char g_fwVersionMark;
+
 /* ===== 调试开关 =====
  * DBG_MINIMAL = 1 → 只打印，不读 IMU（跳过 SPI）、不碰机构。
  *   用来隔离「USB 能枚举但 COM 口打不开」这类问题：
@@ -1114,6 +1127,10 @@ void UserStop()
  */
 void UserInit()
 {
+    /* 引用一次固件版本串首字节（volatile 读）→ 链接器 --gc-sections 不会把版本串丢掉。
+     * 版本串用于 tools/backup_firmware.py 从板上固件识别"这是哪一版"。 */
+    g_fwVersionMark = g_fwVersion[0];
+
     /* ---- 机械臂 PCA9685 ----
      * 顺序有讲究：PIN_Scan() 会把 PE9/11/13/14、PC6、PI6 临时改成输入来探测，
      * 所以机械臂初始化（含引脚扫描）必须排在 JackPwmPins_Init() 之前，

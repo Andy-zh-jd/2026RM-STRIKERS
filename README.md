@@ -62,19 +62,27 @@ powershell -ExecutionPolicy Bypass -File tools\verify-env.ps1
 # 2) 编译底盘固件（也可在 VS Code 里 Ctrl+Shift+B）
 cd 01_firmware\RM2027_School_Comp_Frame; cmake -G Ninja -B build; cmake --build build
 
-# 3) 烧录（C 板 + ST-Link 插好后）
+# 3) 烧录前先备份车上固件（读回整片 flash 可回滚；同时对比仓库构建，判断车上是不是仓库版）
+python tools\backup_firmware.py
+
+# 4) 烧录（C 板 + ST-Link 插好后）
 cd 01_firmware\RM2027_School_Comp_Frame; pyocd flash -t stm32f407ighx build\RM_Frame_C.hex
 
-# 4) 跑仿真
+# 5) 跑仿真
 cd 02_sim\python; python mecanum_pid_sim.py
 cd 02_sim\python; python high_speed_drift_sim.py     # 2026-11-16 新增：高速侧移/饱和/抓地/航向增益
 
-# 5) 下地测试后读车载 RAM 日志（ST-Link attach，不清 RAM；跑完保持上电）
+# 6) 下地测试后读车载 RAM 日志（ST-Link attach，不清 RAM；跑完保持上电）
 python tools\read_log.py            # 汇总：跟踪率/航向漂移/横向偏移/归一化
 python tools\read_log.py --raw      # CSV
 python tools\read_swd.py -n 20      # 直接读 g_dbg（航向锁/归一化观察点）
 python tools\imu_axis_check.py --seconds 120 --rate 20   # IMU yaw 轴/符号台架确认（转车体 90°×2）
+python tools\strafe_input_check.py --seconds 60           # 横移前后偏移：杆量混入 vs 机械漂移
 ```
+
+> **烧录纪律（2026-11-20 起）**：烧前先 `python tools\backup_firmware.py` 备份并记 SHA256；代码先 commit，
+> 再更新 `UserTask.cpp` 的 `FW_VERSION_TAG`；烧完再备份一次，确认扫出的 `RM2027_C <版本串>` 与本次 commit 对应。
+> 这样再也不会出现"车上固件到底是哪版、和仓库差在哪"说不清的情况。
 
 ## 里程碑真实进度（截至 2026-11-02）
 

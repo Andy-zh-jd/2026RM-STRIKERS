@@ -27,3 +27,7 @@ tmp_*.sh
 # IMU 轴标定临时采样（2026-11-17）
 /logs/imu_axis_*.csv
 /logs/strafe_input_*.csv
+
+# 车上固件读回备份（大文件不入库，需要时放 backups/ 本地）
+/backups/*_oncar_*.hex
+/backups/*_oncar_*.bin
