@@ -334,6 +334,21 @@ void WheelsSpeedCalc(float fbVelocity, float lrVelocity, float rtVelocity) {
      * 标定方法见 ChassisTask.h 的 CHASSIS_STRAFE_FB_COMP 注释（需要卷尺量 2 m）。 */
     vx -= CHASSIS_STRAFE_FB_COMP * vy;
 
+    /* ================= ⑧ 横移时前后方向死区整形（默认开） =================
+     * "一边起步偏、一边收杆偏"这类左右不对称，多半是推横移杆时带出了少量前后分量。
+     * 横移为主时对很小的前后指令做平滑死区整形：|vx| < FULL 归零，FULL~2·FULL 线性过渡，
+     * 更大（真正的斜推）不动。只影响操作手混入的小量，不改变机械力不对称。 */
+#if CHASSIS_STRAFE_FB_DEAD_EN
+    if (fabsf(vy) > CHASSIS_STRAFE_LR_MIN) {
+        float fbAbs = fabsf(vx);
+        if (fbAbs < 2.0f * CHASSIS_STRAFE_FB_FULL) {
+            float s = (fbAbs - CHASSIS_STRAFE_FB_FULL) / CHASSIS_STRAFE_FB_FULL;
+            if (s < 0.0f) s = 0.0f;
+            vx *= s;
+        }
+    }
+#endif
+
     float vmagSlew = sqrtf(vx * vx + vy * vy);   /* 平移速度大小（后面两处都要用） */
 
     /* ================= ② IMU 直行航向锁 =================
