@@ -612,12 +612,23 @@ static const float ARM_DIR[16] = {
 void PCA_SetAngle(uint8_t ch, float angle)
 {
     if (ch >= 16) return;
+
+    /* 2026-11-20：允许**负角**（机械行程起点可能落在 500µs 之外）：
+     *   us = 500 + 2000 × angle / 180   →  angle=-18 时 us = 300µs
+     * 逻辑角先钳到 -45~225（镜像后可能变成 181~225），再做 ARM_DIR 镜像。*/
+    if (angle < -45.0f) angle = -45.0f;
+    if (angle > 225.0f) angle = 225.0f;
+
     if (ARM_DIR[ch] < 0.0f) angle = 180.0f - angle;   /* 反向通道：物理角镜像 */
-    if (angle < 0.0f)   angle = 0.0f;
-    if (angle > 180.0f) angle = 180.0f;
-    uint16_t us = (uint16_t)(SERVO_US_MIN +
-                             (SERVO_US_MAX - SERVO_US_MIN) * angle / 180.0f);
-    PCA_SetPulse(ch, us);
+
+    float usf = SERVO_US_MIN + (SERVO_US_MAX - SERVO_US_MIN) * angle / 180.0f;
+
+    /* ⚠ 脉冲硬护栏：PCA_SetPulse() 里 us==0 表示**卸力**！
+     *   负角算出 0 或负数时强转 uint16_t 会变成 6 万多 → 卸力/满占空把舵机顶死。*/
+    if (usf < 300.0f)  usf = 300.0f;      /* 300µs = -18° */
+    if (usf > 2600.0f) usf = 2600.0f;     /* 2600µs = 189° */
+
+    PCA_SetPulse(ch, (uint16_t)usf);
 }
 
 /* 初始化：返回 1=成功通信 */
@@ -951,6 +962,13 @@ void JackTask(void)
 /* ---------- ⑥ 机械臂：6 关节 ---------- */
 #define ARM_CH_NUM     6
 #define ARM_MAX_RATE   0.15f      /* 每 ms 最多 0.15° = 150°/s（硬上限）*/
+
+/* ===== 通道 ↔ 关节 对应表（2026-11-20 实车核对）=====
+ * 实测这颗车上 **CH4 是夹爪、CH5 是腕旋转**（和下面旧注释相反）。
+ * 所以把 ArmControl / armRate / 限位 里的 4、5 两列都按这张表对调了。
+ * 如果接线又换回来，只改这两个宏 + 把 armRate/限位/初值 的 4、5 列换回去。*/
+#define CH_WRISTROT   5      /* 腕旋转 */
+#define CH_GRIP       4      /* 夹爪   */
 #define STICK_DEADZONE 0.08f
 
 /* ===== 2026-11-14：每关节点动速率表（°/ms，满杆）=====
@@ -962,8 +980,8 @@ static const float armRate[ARM_CH_NUM] = {
     0.04f,  /* ch1 大臂   ← 夹矿抬升会打滑，减半 */
     0.10f,  /* ch2 小臂   */
     0.12f,  /* ch3 腕俯仰 */
-    0.15f,  /* ch4 腕旋转 */
-    0.06f   /* ch5 夹爪   */
+    0.06f,  /* ch4 夹爪   （对调后，原 ch5 的值）*/
+    0.15f   /* ch5 腕旋转 （对调后，原 ch4 的值）*/
 };
 
 /* ★ 测试开关：1 = 6 个舵机持续慢速摆动（没接遥控器时用来验证接线）
@@ -977,9 +995,9 @@ static const float armRate[ARM_CH_NUM] = {
 /* 角度限位（装好后按实物调！现在是保守值）
  * 2026-11-14 实测：底座 ch0 的软件限位 10/170 正好等于机械行程两端 →
  * 推到端部时舵机一直顶住结构（嗡嗡 + 抖动）。两端各收 10° 留余量。 */
-float armLimitMin[ARM_CH_NUM] = { 20, 20, 20, 30,   0,  0 };
-float armLimitMax[ARM_CH_NUM] = {160,160,160,150, 180, 70 };
-float armAngle[ARM_CH_NUM]    = { 90, 90, 90, 90,  90, 30 };
+float armLimitMin[ARM_CH_NUM] = { 20, 20, 20, 30,   0,   0 };
+float armLimitMax[ARM_CH_NUM] = {160,160,160,150,  70, 180 };   /* [4]=夹爪70 [5]=腕旋转180（对调）*/
+float armAngle[ARM_CH_NUM]    = { 90, 90, 90, 90,  30, 90 };    /* [4]夹爪30张开 [5]腕旋转90 */
 
 static float Stick(float v)
 {
@@ -1000,6 +1018,34 @@ static void ArmJog(uint8_t ch, float rate)
     if (armAngle[ch] > armLimitMax[ch]) armAngle[ch] = armLimitMax[ch];
 
     
+}
+
+/* ===== SC 上档 = 机械臂收纳姿态（2026-11-20 从台架那套移植）=====
+ * SC 拨到**上档**时，六路舵机自动走到下面这组角度并锁住（忽略摇杆），
+ * 方便"机械臂收好、只开车"（SB 上档驾驶）。SC 回中/下档恢复正常操作。
+ *
+ * ★ 想改姿态：只改 armParkAngle[6] 这 6 个数（顺序 = 通道号，见 CH_* 表）：
+ *      [0] 底座  [1] 大臂  [2] 小臂  [3] 腕俯仰  [CH_GRIP] 夹爪  [CH_WRISTROT] 腕旋转
+ *   必须落在 armLimitMin/Max 之间，否则会被夹回限位（会抽一下）。
+ * ★ 想调归位速度：ARM_PARK_RATE（°/ms，0.06 = 60°/s）。
+ * ★ 想关掉：ARM_PARK_ON_SC_UP 改 0。*/
+#define ARM_PARK_ON_SC_UP   1
+#define ARM_PARK_RATE       0.06f        /* 归位速度 60°/s */
+
+static const float armParkAngle[ARM_CH_NUM] = {
+    /* CH0  CH1  CH2  CH3   CH4(夹爪) CH5(腕旋转) */
+        90,  90,  90,  90,   30,       90
+};
+
+/* 往目标姿态限速逼近（不是瞬间跳过去 —— 那样电流冲击大、结构也会"哐"一下）*/
+static void ArmMoveToward(const float *tgt, float degPerMs)
+{
+    for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+        float d = tgt[i] - armAngle[i];
+        if (d >  degPerMs) d =  degPerMs;
+        if (d < -degPerMs) d = -degPerMs;
+        ArmJog(i, d);            /* ArmJog 内部会夹到 armLimitMin/Max */
+    }
 }
 
 #if ARM_TEST_SWEEP
@@ -1027,8 +1073,18 @@ static void ArmControl(void)
 #endif
     RC_Info_t &rc = RemoteControl::rcInfo;
 
-    if (JackActive()) return;                   /* 爬台阶时机械臂不要动 */
     if (rc.sRight == DOWN_POS) return;         /* 急停挡：不动 */
+
+#if ARM_PARK_ON_SC_UP
+    /* SC 上档 = 机械臂收到固定姿态并锁住（忽略摇杆），专心开底盘。
+     * 放在 JackActive 判断**之前**：爬台阶时也希望手臂先收好。*/
+    if (rc.sRight == UP_POS) {
+        ArmMoveToward(armParkAngle, ARM_PARK_RATE);
+        return;
+    }
+#endif
+
+    if (JackActive()) return;                   /* 爬台阶时机械臂不要动 */
 
     if (rc.sLeft == MID_POS) {                 /* 臂模式 1 */
         ArmJog(0,  armRate[0] * Stick(rc.left_rol));    /* 底座（左摇杆横向）*/
@@ -1036,13 +1092,13 @@ static void ArmControl(void)
         ArmJog(2,  armRate[2] * Stick(rc.right_col));   /* 小臂（右摇杆纵向）*/
         ArmJog(3,  armRate[3] * Stick(rc.right_rol));   /* 腕俯仰（右摇杆横向）*/
     } else if (rc.sLeft == DOWN_POS) {         /* 臂模式 2 */
-        ArmJog(4, armRate[4] * Stick(rc.left_rol));     /* 腕旋转 */
-        ArmJog(5, armRate[5] * Stick(rc.right_col));    /* 夹爪   */
+        ArmJog(CH_WRISTROT, armRate[CH_WRISTROT] * Stick(rc.left_rol));   /* 腕旋转（CH5）*/
+        ArmJog(CH_GRIP,     armRate[CH_GRIP]     * Stick(rc.right_col));  /* 夹爪  （CH4）*/
     }
 }
 
 /* 已经下发到硬件的角度（"变化才写"用）*/
-float armSent[ARM_CH_NUM] = { 90, 90, 90, 90, 90, 30 };
+float armSent[ARM_CH_NUM] = { 90, 90, 90, 90, 30, 90 };   /* [4]夹爪30 [5]腕旋转90（对调）*/
 
 /* 每 1ms 调用：只写 1 个通道，6ms 轮完一圈 */
 static void ArmFlushOne(void)
