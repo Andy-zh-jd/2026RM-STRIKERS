@@ -537,13 +537,28 @@ void PCA_SetPulse(uint8_t ch, uint16_t us)
 }
 
 /* 设角度 0~180° */
+/* 2026-11-18：允许**负角**（"代码角 < 0"）。
+ * 有些关节的机械行程起点落在 500µs 之外，需要更窄的脉冲：
+ *      us = 500 + 2000 × angle / 180      →  angle=-13 时 us = 356µs
+ *
+ * ⚠ 两道必须的护栏：
+ *   ① 角度钳位放宽到 -45~225（对应脉冲约 0~3000µs），不再死卡 0~180；
+ *   ② **脉冲硬上下限 350~2600µs** —— 因为 PCA_SetPulse() 里 `us == 0` 表示
+ *      **卸力**！负角算出 0 或负数时强转 uint16_t 会变成 6 万多，直接变成
+ *      卸力/满占空把舵机顶死。护栏把这一脚挡住。
+ *      350µs 对应 -13.5°，2600µs 对应 189°。*/
 void PCA_SetAngle(uint8_t ch, float angle)
 {
-    if (angle < 0.0f)   angle = 0.0f;
-    if (angle > 180.0f) angle = 180.0f;
-    uint16_t us = (uint16_t)(SERVO_US_MIN +
-                             (SERVO_US_MAX - SERVO_US_MIN) * angle / 180.0f);
-    PCA_SetPulse(ch, us);
+    if (angle < -45.0f)  angle = -45.0f;
+    if (angle > 225.0f)  angle = 225.0f;
+
+    float usf = SERVO_US_MIN + (SERVO_US_MAX - SERVO_US_MIN) * angle / 180.0f;
+
+    if (usf < 300.0f)  usf = 300.0f;      /* 硬下限 300µs（=-18°）；再低舵机就不跟了，
+                                           * 而且 0 会被当成"卸力" @PCA_SetPulse */
+    if (usf > 2600.0f) usf = 2600.0f;     /* 别发 >2600µs */
+
+    PCA_SetPulse(ch, (uint16_t)usf);
 }
 
 /* 初始化：返回 1=成功通信 */
@@ -885,7 +900,7 @@ void JackTask(void)
  * 2026-11-14：底座/大臂调慢（原来 0.15 / 0.08，动起来太冲）。
  * 想再调就只改这里，两个臂模式一起生效。
  * 参考：底座 100°/s 转半圈约 1.8 s；大臂 60°/s 抬 90° 约 1.5 s。 */
-#define ARM_RATE_BASE      0.10f   /* CH0 底座   100°/s（原 0.15）*/
+#define ARM_RATE_BASE      0.10f   /* CH0 底座 100°/s（系数 1.0，软件角=机械角）*/
 #define ARM_RATE_SHOULDER  0.06f   /* CH1 大臂    60°/s（原 0.08）*/
 #define ARM_RATE_ELBOW     0.08f   /* CH2 小臂    80°/s */
 #define ARM_RATE_WRISTP    0.10f   /* CH3 腕俯仰 100°/s */
@@ -913,6 +928,31 @@ void JackTask(void)
 #define ARM_DIR_ELBOW      (-1.0f)   /* CH2 小臂（2026-11-14 再取反）*/
 #define ARM_DIR_WRISTP     (+1.0f)   /* CH3 腕俯仰（2026-11-14 取反）*/
 #define ARM_DIR_WRISTR     (+1.0f)   /* CH4 腕旋转 */
+
+/* ===== SC 上档 = 机械臂收纳姿态（2026-11-20）=====
+ * SC 拨到**上档**时，六路舵机自动走到下面这组角度并锁住（忽略摇杆），
+ * 方便"机械臂收好、只开车"（SB 上档驾驶）。SC 回中/下档就恢复正常操作。
+ *
+ * ★ 想改姿态：只改 armParkAngle[6] 这 6 个数（顺序 = 通道号）：
+ *      [0] 底座   [1] 大臂   [2] 小臂   [3] 腕俯仰   [4] 夹爪   [5] 腕旋转
+ *   每个数都必须落在 armLimitMin/Max 之间，否则会被夹回限位（会抽一下）。
+ *
+ * ★ 想调归位速度：改 ARM_PARK_RATE（°/ms；0.06 = 60°/s，慢一点更不冲）。
+ * ★ 想关掉这个功能：把 ARM_PARK_ON_SC_UP 改成 0。*/
+#define ARM_PARK_ON_SC_UP   1
+#define ARM_PARK_RATE       0.06f        /* 归位速度 60°/s */
+
+static const float armParkAngle[ARM_CH_NUM] = {//110, 90, 45, 90,  30, 30
+    /*  CH0  CH1  CH2  CH3   CH4(夹爪) CH5(腕旋转) */
+        110,  170, 100,  90,   60,       30
+};
+/* 当前值检查（2026-11-20 手动改过，逐条对着 armLimitMin/Max 核对）：
+ *   底座   110 ∈ [2,178]    ✓
+ *   大臂   170 ∈ [-8,170]   ⚠ 正好贴上限；这颗的机械行程只到 105°，会顶住
+ *   小臂   100 ∉ [0,90]     ✗ 会被夹回 90
+ *   腕俯仰  90 ∈ [40,150]   ✓
+ *   夹爪    60 ∉ [30,30]    ✗ min==max，区间为 0 → 夹爪一动不动
+ *   腕旋转  30 ∈ [30,75]    ✓ */
 #define STICK_DEADZONE 0.08f
 
 /* ★ 测试开关：1 = 6 个舵机持续慢速摆动（没接遥控器时用来验证接线）
@@ -950,13 +990,27 @@ extern float armSent[ARM_CH_NUM];
 
 /* 角度限位（装好后按实物调！现在是保守值）
  * 下标 = 通道号。CH5（夹爪）必须收窄：0~180 会让它直接顶到机械限位堵转。 */
-float armLimitMin[ARM_CH_NUM] = { 10, 20, 20, 30,  30,   2 };   /* [4]=夹爪 30  [5]=腕旋转 2（270°满行程）*/
-/* CH5（夹爪）：0~180 → **30~150**。
- * 为什么：角度越小张得越开，开到 0° 附近就是机械限位；软件限位必须挡在它之外，
- * 否则一上电（或标定模式乱点）就会顶死堵转 —— 这就是"开机开到最大然后堵转"的原因。
- * 标定完请按实测端点再收窄（留 2~3° 余量）。 */
-float armLimitMax[ARM_CH_NUM] = {170,160,160,150, 150, 178 };   /* [4]=夹爪 150 [5]=腕旋转 178 */
-float armAngle[ARM_CH_NUM]    = { 90, 90, 90, 90,  60, 90 };   /* [4]夹爪=张口60 [5]腕旋转=90 */
+float armLimitMin[ARM_CH_NUM] = {  2, -8, 0, 40,  30,   30 };
+float armLimitMax[ARM_CH_NUM] = { 178, 170,90,150,  30, 75 };
+/*                    通道 →   CH0   CH1  CH2  CH3   CH4  CH5
+ *                              底座  大臂 小臂 腕俯  夹爪 腕旋
+ *
+ * 全部舵机 = **180°**（500~2500µs ↔ 0~180°）→ **软件角 = 机械角**（系数 1.0）
+ *
+ * CH1 大臂：-18° ~ 105°（2026-11-18 按需求改，-18° 是软件能给的极限）
+ *   -18° → 脉冲 300µs（已超舵机标称的 500µs 下限 200µs，靠"脉冲硬护栏"兜住）
+ *   想再负 30°（-48°）**软件做不到**：那要 167µs，舵机不会跟。
+ *   只能机械解决：舵盘拆下来**重装一齿**（通常 10~15°/齿）或换 270° 舵机。
+ *   105° → 脉冲 1667µs
+ *   ⚠ 能不能真的走到 -13° 取决于这颗舵机是否接受 <500µs 的脉冲；
+ *     推到底如果**不再继续动**、只有轻微吱声，就是它到头了，把 -13 改成 0 即可。
+ *
+ * CH4 夹爪 = 30~150（张口 60 GRIP_OPEN_DEG / 闭合 120 GRIP_CLOSE_DEG）
+ * CH5 腕旋转 = 2~178（两端留 2° 躲舵机端点死区）
+ *
+ * ⚠ 不要把上限写成 >180：PCA_SetAngle 会钳到 180，而 ang= 遥测仍显示那个大数
+ *   （曾经写过 600，排查时被误导过一次）。*/
+float armAngle[ARM_CH_NUM]    = { 110, 90, 45, 90,  30, 30 };   /* [4]夹爪=张口60 [5]腕旋转=90  上电姿态*/
 
 static float Stick(float v)
 {
@@ -1200,6 +1254,17 @@ static void ArmChannelScan(void)
 }
 #endif
 
+/* 往目标姿态限速逼近（不是瞬间跳过去 —— 那样电流冲击大、结构也会"哐"一下）*/
+static void ArmMoveToward(const float *tgt, float degPerMs)
+{
+    for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+        float d = tgt[i] - armAngle[i];
+        if (d >  degPerMs) d =  degPerMs;
+        if (d < -degPerMs) d = -degPerMs;
+        ArmJog(i, d);            /* ArmJog 内部会夹到 armLimitMin/Max */
+    }
+}
+
 static void ArmControl(void)
 {
 #if ARM_TEST_SWEEP
@@ -1228,6 +1293,17 @@ static void ArmControl(void)
      * 所以删掉它只会少一个坑，不会少一层保护。 */
     // if (JackActive()) return;                /* 爬台阶时机械臂不要动（已废弃）*/
     if (rc.sRight == DOWN_POS) return;         /* 急停挡：不动 */
+
+#if ARM_PARK_ON_SC_UP
+    /* SC 上档 = 机械臂收纳到固定姿态并锁住（忽略摇杆），此时专心开底盘。
+     * 目标角度见顶部 armParkAngle[]。*/
+    if (rc.sRight == UP_POS) {
+        ArmMoveToward(armParkAngle, ARM_PARK_RATE);
+        gripTarget = armAngle[GRIP_CH];   /* 让 gt= 遥测跟着走，别显示旧值 */
+        gripDir    = 0;
+        return;
+    }
+#endif
 
 #if GRIP_SRC_SD
     /* 夹爪不走摇杆：SD 两档开关直接给 ±1（高位=夹紧，低位=张开）。*/
