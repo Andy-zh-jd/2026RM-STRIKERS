@@ -1408,6 +1408,11 @@ static void ArmFlushOne(void)
 
 /* ---------- PCA 自愈：芯片被复位（SLEEP=1）就自动重新初始化 ---------- */
 uint8_t g_pcaRecover = 0;
+
+/* 2026-11-21：机械臂是否处于急停中。
+ * 作用：PCA 自愈（PCA_HealthCheck）重新初始化芯片后，**急停期间不要恢复角度** ——
+ * 否则只要芯片复位一次，舵机就又"给力"了，急停形同虚设。*/
+uint8_t g_armEstop = 0;
 uint8_t g_pcaWakeOk  = 0;   /* 1 = 最近一次检查时芯片醒着（SLEEP=0）*/
 uint8_t g_pcaExtClk  = 0;   /* 1 = MODE1 的 EXTCLK 位被置 1（**只能断电清**）*/
 
@@ -1461,9 +1466,17 @@ static void PCA_HealthCheck(void)
     lastHealMs = now;
 
     PCA_Init();                           /* 重新配置 PRE_SCALE / MODE1 */
-    for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
-        PCA_SetAngle(i, armAngle[i]);     /* 把所有通道恢复到当前角度 */
-        armSent[i] = -999.0f;             /* 强制下一步重新下发 */
+
+    /* 2026-11-21：**急停期间只重新初始化、不恢复角度**。
+     * PCA_Init() 会把 16 路脉冲清 0（= 全部卸力），急停时正是要这个状态；
+     * 如果这里再 PCA_SetAngle() 写一遍，舵机就又给力了 —— 急停会被绕过。*/
+    if (!g_armEstop) {
+        for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+            PCA_SetAngle(i, armAngle[i]); /* 把所有通道恢复到当前角度 */
+            armSent[i] = -999.0f;         /* 强制下一步重新下发 */
+        }
+    } else {
+        for (uint8_t i = 0; i < ARM_CH_NUM; i++) armSent[i] = -999.0f;
     }
     g_pcaRecover++;                       /* 记录恢复次数，便于判断电源是否在抖 */
 
@@ -1542,15 +1555,38 @@ void UserInit()
         gripDir           = 0;
         armSent[GRIP_CH]  = -999.0f;      /* 强制 ArmFlushOne 下一次重新下发 */
 
+        /* 2026-11-21：**上电先看急停档再决定是否给力**（原来无条件上电就给 6 路使能，
+         * 实测 CH1 上电瞬间就顶住 —— 哪怕 SC 在急停档，也要等 UserHandle() 跑起来才卸力，
+         * 而 UserInit 里后面还有 IMU 标定（约 1s），这段时间机械臂一直是使力的）。
+         * 做法：先等最多 300ms 让遥控帧到达，然后
+         *   - SC 在急停档（下档）→ 不给力
+         *   - 遥控还没连上        → 不给力（安全默认）
+         *   - 否则                → 走到上电姿态
+         * 不给力时 PCA_Init() 已把 16 路清 0（卸力），等 SC 拨离下档后由
+         * UserHandle() 的 ArmFlushOne 自动补发（armSent = -999）。*/
+        uint8_t bootAllowPower = 1;
+        for (uint8_t w = 0; w < 30u && !RemoteAlive(); w++) {
+            HAL_IWDG_Refresh(&hiwdg);        /* 别让看门狗在等遥控时复位 */
+            HAL_Delay(10);
+        }
+        if (!RemoteAlive() || RemoteControl::rcInfo.sRight == DOWN_POS) {
+            bootAllowPower = 0;
+            g_armEstop = 1;                  /* 同步给 PCA_HealthCheck：上电期间也别恢复角度 */
+        }
+
         uint8_t pcaOk = PCA_Init();
         if (pcaOk) {
-            for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
-                PCA_SetAngle(i, armAngle[i]);   /* 先到初始姿态 */
-                HAL_Delay(5);
-            }
+            if (bootAllowPower) {
+                for (uint8_t i = 0; i < ARM_CH_NUM; i++) {
+                    PCA_SetAngle(i, armAngle[i]);   /* 先到初始姿态 */
+                    HAL_Delay(5);
+                }
 #if ARM_SELFTEST_ON_BOOT
-            ArmSelfTest();
+                ArmSelfTest();
 #endif
+            } else {
+                for (uint8_t i = 0; i < ARM_CH_NUM; i++) armSent[i] = -999.0f;
+            }
         }
         /* pcaOk = 0 说明 I2C 没通 → C 页 pca= 不会是 33 */
     }
@@ -1739,6 +1775,8 @@ void UserHandle()
 #if !(ARM_TEST_SWEEP || ARM_CH_SCAN || (ARM_CH_TEST >= 0))
         if (!RemoteAlive()) estop = 1;
 #endif
+        g_armEstop = estop;                 /* 给 PCA_HealthCheck 用：急停时不要恢复角度 */
+
         if (estop) {
             if (!armEStop) { armEStop = 1; ArmStopAll(); }
         } else {
