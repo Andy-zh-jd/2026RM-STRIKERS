@@ -582,7 +582,21 @@ void PCA_SetPulse(uint8_t ch, uint16_t us)
     PCA_Write4(reg, buf);
 }
 
-/* 设角度 0~180° */
+/* ===== 每通道舵机**电气行程**（2026-11-21）=====
+ * 500~2500µs 对应的机械角度：180° 舵机填 180，270° 舵机填 270。
+ * 这样 armLimitMin/Max、armRate、armParkAngle 的单位**统一是机械度**，不用再心算换算。
+ *   下标 = 通道号（本车 CH4=夹爪、CH5=腕旋转）
+ *   CH2 小臂 2026-11-21 换成 **270° 舵机** → 填 270；其它都是 180°。*/
+static const float SERVO_SPAN_DEG[6] = {
+    180.0f,   /* CH0 底座   */
+    180.0f,   /* CH1 大臂   */
+    270.0f,   /* CH2 小臂   ← 270° 舵机 */
+    180.0f,   /* CH3 腕俯仰 */
+    180.0f,   /* CH4 夹爪   */
+    180.0f    /* CH5 腕旋转 */
+};
+
+/* 设角度（单位 = 该通道的**机械度**，满量程见 SERVO_SPAN_DEG）*/
 /* 2026-11-18：允许**负角**（"代码角 < 0"）。
  * 有些关节的机械行程起点落在 500µs 之外，需要更窄的脉冲：
  *      us = 500 + 2000 × angle / 180      →  angle=-13 时 us = 356µs
@@ -595,10 +609,12 @@ void PCA_SetPulse(uint8_t ch, uint16_t us)
  *      350µs 对应 -13.5°，2600µs 对应 189°。*/
 void PCA_SetAngle(uint8_t ch, float angle)
 {
-    if (angle < -45.0f)  angle = -45.0f;
-    if (angle > 225.0f)  angle = 225.0f;
+    const float span = (ch < 6u) ? SERVO_SPAN_DEG[ch] : 180.0f;
 
-    float usf = SERVO_US_MIN + (SERVO_US_MAX - SERVO_US_MIN) * angle / 180.0f;
+    if (angle < -45.0f)       angle = -45.0f;
+    if (angle > span + 45.0f) angle = span + 45.0f;    /* 允许少量超程（负角/端部）*/
+
+    float usf = SERVO_US_MIN + (SERVO_US_MAX - SERVO_US_MIN) * angle / span;
 
     if (usf < 300.0f)  usf = 300.0f;      /* 硬下限 300µs（=-18°）；再低舵机就不跟了，
                                            * 而且 0 会被当成"卸力" @PCA_SetPulse */
@@ -996,9 +1012,9 @@ __attribute__((used)) const float ARM_DIR[6] = {
 #define ARM_PARK_ON_SC_UP   1
 #define ARM_PARK_RATE       0.06f        /* 归位速度 60°/s */
 
-static const float armParkAngle[ARM_CH_NUM] = {//110, 90, 45, 90,  30, 30
-    /*  CH0  CH1  CH2  CH3   CH4(夹爪) CH5(腕旋转) */
-        110,  170, 100,  90,   60,       30
+static const float armParkAngle[ARM_CH_NUM] = {
+    /*  CH0  CH1  CH2  CH3   CH4(夹爪) CH5(腕旋转)   ← 单位：机械度 */
+        110,  170, 165,  90,   60,       30
 };
 /* 当前值检查（2026-11-20 手动改过，逐条对着 armLimitMin/Max 核对）：
  *   底座   110 ∈ [2,178]    ✓
@@ -1044,8 +1060,8 @@ extern float armSent[ARM_CH_NUM];
 
 /* 角度限位（装好后按实物调！现在是保守值）
  * 下标 = 通道号。CH5（夹爪）必须收窄：0~180 会让它直接顶到机械限位堵转。 */
-float armLimitMin[ARM_CH_NUM] = {  2, -8, 0, 40,  30,   30 };
-float armLimitMax[ARM_CH_NUM] = { 178, 170,90,150,  30, 75 };
+float armLimitMin[ARM_CH_NUM] = {  2, -8, 5, 40,  30,   30 };   /* [2]小臂=5（270°舵机，机械度）*/
+float armLimitMax[ARM_CH_NUM] = { 178, 170,265,150,  30, 75 };   /* [2]小臂=265（用满 270°）*/
 /*                    通道 →   CH0   CH1  CH2  CH3   CH4  CH5
  *                              底座  大臂 小臂 腕俯  夹爪 腕旋
  *
@@ -1064,7 +1080,7 @@ float armLimitMax[ARM_CH_NUM] = { 178, 170,90,150,  30, 75 };
  *
  * ⚠ 不要把上限写成 >180：PCA_SetAngle 会钳到 180，而 ang= 遥测仍显示那个大数
  *   （曾经写过 600，排查时被误导过一次）。*/
-float armAngle[ARM_CH_NUM]    = { 110, 90, 45, 90,  30, 30 };   /* [4]夹爪=张口60 [5]腕旋转=90  上电姿态*/
+float armAngle[ARM_CH_NUM]    = { 110, 40,135, 90,  30, 30 };   /* 上电姿态（机械度；[2]小臂中位）*/
 
 static float Stick(float v)
 {
@@ -1388,7 +1404,7 @@ static void ArmControl(void)
 }
 
 /* 已经下发到硬件的角度（"变化才写"用）*/
-float armSent[ARM_CH_NUM] = { 90, 90, 90, 90, 60, 90 };
+float armSent[ARM_CH_NUM] = { 90, 90, 135, 90, 60, 90 };
 
 /* 每 1ms 调用：只写 1 个通道，6ms 轮完一圈 */
 static void ArmFlushOne(void)
